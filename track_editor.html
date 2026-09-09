@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Track Editor — Indoor Line</title>
+<style>
+  :root{
+    --bg:#0d0e10; --panel:rgba(18,20,23,0.92); --border:rgba(255,255,255,0.10);
+    --amber:#ffb020; --green:#3ddc84; --red:#ff4d4d; --text:#e7e6e2; --dim:#9aa0a6;
+    --mono:'JetBrains Mono','Consolas','SF Mono',monospace;
+    --sidebar:300px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);overflow:hidden;}
+  #app{display:grid;grid-template-columns:var(--sidebar) 1fr;height:100%;}
+  aside{
+    background:var(--panel);border-right:1px solid var(--border);
+    padding:18px 16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;
+  }
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-0.01em;}
+  .sub{font-size:11px;color:var(--dim);line-height:1.45;margin:0;}
+  label{display:block;font-size:11px;color:var(--dim);margin-bottom:4px;}
+  input[type=text]{
+    width:100%;background:#121417;border:1px solid var(--border);color:var(--text);
+    border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;
+  }
+  .row{display:flex;gap:8px;flex-wrap:wrap;}
+  button,.fileBtn{
+    background:#1a1d22;border:1px solid var(--border);color:var(--text);
+    border-radius:3px;padding:8px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;
+  }
+  button:hover,.fileBtn:hover{border-color:rgba(255,176,32,0.45);}
+  button.primary{background:var(--amber);color:#1a1200;border:none;font-weight:700;}
+  button.danger{color:#ff8a8a;}
+  button:disabled{opacity:0.4;cursor:default;}
+  .hint{font-size:10px;color:var(--dim);line-height:1.5;}
+  kbd{background:#222;border:1px solid var(--border);border-radius:2px;padding:1px 4px;font-size:10px;}
+  #status{font-size:11px;color:var(--green);min-height:1.2em;}
+  #status.err{color:var(--red);}
+  main{position:relative;overflow:hidden;}
+  #canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;}
+  .help{
+    position:absolute;left:12px;bottom:12px;padding:8px 10px;font-size:10px;color:var(--dim);
+    background:rgba(18,20,23,0.85);border:1px solid var(--border);border-radius:3px;max-width:340px;line-height:1.45;
+  }
+  a.back{font-size:11px;color:var(--amber);text-decoration:none;}
+  a.back:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div>
+      <h1>Track Editor</h1>
+      <p class="sub">Click to place simple corner anchors. Corners are auto-filleted for the race mesh.</p>
+    </div>
+    <div>
+      <label for="trackId">Track id</label>
+      <input id="trackId" type="text" value="custom-circuit" spellcheck="false">
+    </div>
+    <div>
+      <label for="trackName">Display name</label>
+      <input id="trackName" type="text" value="Custom Circuit" spellcheck="false">
+    </div>
+    <div class="row">
+      <button type="button" id="btnUndo" title="Remove last point">Undo</button>
+      <button type="button" id="btnFit" title="Fit path in view">Fit</button>
+      <button type="button" id="btnClear" class="danger">Clear</button>
+    </div>
+    <div class="row">
+      <button type="button" id="btnSave" class="primary">Save JSON</button>
+      <button type="button" id="btnSaveFolder">Save to folder…</button>
+    </div>
+    <div class="row">
+      <label class="fileBtn">Load JSON<input type="file" id="fileLoad" accept="application/json,.json" hidden></label>
+    </div>
+    <p class="hint">
+      Downloads <code>{id}.json</code> + updated <code>manifest.json</code>.
+      Put both in <code>tracks/</code>, or use Save to folder on Chromium.
+    </p>
+    <div id="status"></div>
+    <a class="back" href="gokart_simulator.html">← back to simulator</a>
+  </aside>
+  <main>
+    <canvas id="canvas"></canvas>
+    <div class="help">
+      <kbd>Click</kbd> add point · <kbd>Drag</kbd> move · <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove ·
+      <kbd>Scroll</kbd> zoom · <kbd>Middle-drag</kbd> / <kbd>Space</kbd>+drag pan
+    </div>
+  </main>
+</div>
+
+<script src="track_lib.js"></script>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const HALF_W = TrackLib.DEFAULTS.halfW;
+const CURB_W = TrackLib.DEFAULTS.curbW;
+const WALL_GAP = TrackLib.DEFAULTS.wallGap;
+const WALL_OFF = HALF_W + CURB_W + WALL_GAP;
+
+let points = []; /* {x,z} */
+let selected = -1;
+let drag = null; /* {kind:'point'|'pan', idx, lastX, lastY} */
+let view = { ox: -40, oy: -40, scale: 4 };
+let viewFitted = true;
+const ZOOM_MIN = 0.4, ZOOM_MAX = 40;
+
+const params = new URLSearchParams(location.search);
+const loadId = params.get('track') || '';
+
+function setStatus(msg, err){
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.className = err ? 'err' : '';
+}
+
+function w2s(x, z){ return { x: (x - view.ox) * view.scale, y: (z - view.oy) * view.scale }; }
+function s2w(sx, sy){ return { x: sx / view.scale + view.ox, z: sy / view.scale + view.oy }; }
+function snap(v){ return Math.round(v); }
+
+function fitView(){
+  if(points.length < 1){
+    view = { ox: -40, oy: -40, scale: 4 };
+    viewFitted = true;
+    return;
+  }
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  points.forEach(p=>{
+    minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x);
+    minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z);
+  });
+  const pad = 20;
+  const w = Math.max(20, maxX - minX + pad * 2);
+  const h = Math.max(20, maxZ - minZ + pad * 2);
+  const sx = canvas.width / w, sy = canvas.height / h;
+  view.scale = Math.min(sx, sy) * 0.92;
+  view.ox = (minX + maxX) / 2 - (canvas.width / view.scale) / 2;
+  view.oy = (minZ + maxZ) / 2 - (canvas.height / view.scale) / 2;
+  viewFitted = true;
+}
+
+function resize(){
+  const main = canvas.parentElement;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.floor(main.clientWidth * dpr);
+  canvas.height = Math.floor(main.clientHeight * dpr);
+  canvas.style.width = main.clientWidth + 'px';
+  canvas.style.height = main.clientHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if(viewFitted) fitView();
+  draw();
+}
+
+function canvasPos(e){
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function hitPoint(sx, sy, rad){
+  rad = rad || 10;
+  for(let i=points.length-1;i>=0;i--){
+    const m = w2s(points[i].x, points[i].z);
+    if(Math.hypot(m.x - sx, m.y - sy) <= rad) return i;
+  }
+  return -1;
+}
+
+function drawGrid(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.fillStyle = '#0d0e10';
+  ctx.fillRect(0, 0, w, h);
+  const step = 10;
+  const a = s2w(0, 0), b = s2w(w, h);
+  const x0 = Math.floor(a.x / step) * step, z0 = Math.floor(a.z / step) * step;
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for(let x = x0; x <= b.x; x += step){
+    const p0 = w2s(x, a.z), p1 = w2s(x, b.z);
+    ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+  }
+  for(let z = z0; z <= b.z; z += step){
+    const p0 = w2s(a.x, z), p1 = w2s(b.x, z);
+    ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+  }
+  ctx.stroke();
+  /* axes */
+  const o = w2s(0, 0);
+  ctx.strokeStyle = 'rgba(255,176,32,0.25)';
+  ctx.beginPath();
+  ctx.moveTo(0, o.y); ctx.lineTo(w, o.y);
+  ctx.moveTo(o.x, 0); ctx.lineTo(o.x, h);
+  ctx.stroke();
+}
+
+function drawPreview(){
+  if(points.length < 3){
+    if(points.length >= 2){
+      ctx.beginPath();
+      points.forEach((p,i)=>{ const m=w2s(p.x,p.z); if(i===0) ctx.moveTo(m.x,m.y); else ctx.lineTo(m.x,m.y); });
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    return;
+  }
+  const path = TrackLib.buildCenterline(points);
+  if(!path.N) return;
+  const roadW = Math.max(4, HALF_W * 2 * view.scale);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  ctx.beginPath();
+  for(let i=0;i<=path.N;i++){
+    const p = path.center[i % path.N];
+    const m = w2s(p.x, p.z);
+    if(i===0) ctx.moveTo(m.x, m.y); else ctx.lineTo(m.x, m.y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = roadW + Math.max(2, (CURB_W + WALL_GAP) * 2 * view.scale);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(40,42,48,0.95)';
+  ctx.lineWidth = roadW;
+  ctx.stroke();
+
+  /* polyline between anchors (thin) */
+  ctx.beginPath();
+  points.forEach((p,i)=>{ const m=w2s(p.x,p.z); if(i===0) ctx.moveTo(m.x,m.y); else ctx.lineTo(m.x,m.y); });
+  if(points.length >= 3){
+    const m = w2s(points[0].x, points[0].z);
+    ctx.lineTo(m.x, m.y);
+  }
+  ctx.strokeStyle = 'rgba(255,176,32,0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawAnchors(){
+  points.forEach((p, i)=>{
+    const m = w2s(p.x, p.z);
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, i === selected ? 7 : 5, 0, Math.PI * 2);
+    ctx.fillStyle = i === 0 ? '#ffb020' : (i === selected ? '#3ddc84' : '#e7e6e2');
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillText(String(i), m.x + 8, m.y - 8);
+  });
+}
+
+function draw(){
+  drawGrid();
+  drawPreview();
+  drawAnchors();
+}
+
+function buildTrackObject(){
+  const id = (document.getElementById('trackId').value || 'custom-circuit').trim().replace(/[^a-zA-Z0-9_-]/g,'-') || 'custom-circuit';
+  const name = (document.getElementById('trackName').value || id).trim();
+  return {
+    id,
+    name,
+    wayPoints: points.map(p => [p.x, p.z])
+  };
+}
+
+function downloadBlob(filename, text){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type:'application/json'}));
+  a.download = filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+
+function mergeManifest(list, track){
+  const file = track.id + '.json';
+  const next = Array.isArray(list) ? list.slice() : [];
+  const idx = next.findIndex(t => t.id === track.id);
+  const entry = { id: track.id, name: track.name, file };
+  if(idx >= 0) next[idx] = entry; else next.push(entry);
+  return next;
+}
+
+document.getElementById('btnSave').addEventListener('click', async ()=>{
+  if(points.length < 3){ setStatus('Need at least 3 points', true); return; }
+  const track = buildTrackObject();
+  let manifest = [{id:'indoor', name:'Indoor Circuit', file:'indoor.json'}];
+  try{
+    const r = await fetch('tracks/manifest.json', {cache:'no-store'});
+    if(r.ok) manifest = await r.json();
+  }catch(_){}
+  manifest = mergeManifest(manifest, track);
+  downloadBlob(track.id + '.json', JSON.stringify(track, null, 2) + '\n');
+  downloadBlob('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+  setStatus('Downloaded ' + track.id + '.json + manifest.json');
+});
+
+document.getElementById('btnSaveFolder').addEventListener('click', async ()=>{
+  if(points.length < 3){ setStatus('Need at least 3 points', true); return; }
+  if(!window.showDirectoryPicker){
+    setStatus('Folder save needs Chromium (or use Save JSON)', true);
+    return;
+  }
+  try{
+    const dir = await showDirectoryPicker({ mode: 'readwrite' });
+    const track = buildTrackObject();
+    let manifest = [];
+    try{
+      const mh = await dir.getFileHandle('manifest.json');
+      const file = await mh.getFile();
+      manifest = JSON.parse(await file.text());
+    }catch(_){
+      manifest = [{id:'indoor', name:'Indoor Circuit', file:'indoor.json'}];
+    }
+    manifest = mergeManifest(manifest, track);
+    async function write(name, text){
+      const fh = await dir.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(text);
+      await w.close();
+    }
+    await write(track.id + '.json', JSON.stringify(track, null, 2) + '\n');
+    await write('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+    setStatus('Saved to folder: ' + track.id + '.json');
+  }catch(e){
+    if(e && e.name === 'AbortError') return;
+    setStatus('Folder save failed: ' + (e && e.message), true);
+  }
+});
+
+document.getElementById('fileLoad').addEventListener('change', async e=>{
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  try{
+    const data = JSON.parse(await f.text());
+    const wps = TrackLib.normalizeWayPoints(data);
+    if(wps.length < 3) throw new Error('need ≥3 wayPoints');
+    points = wps.map(p => ({ x: p[0], z: p[1] }));
+    if(data.id) document.getElementById('trackId').value = data.id;
+    if(data.name) document.getElementById('trackName').value = data.name;
+    selected = -1;
+    fitView();
+    draw();
+    setStatus('Loaded ' + (data.id || f.name));
+  }catch(err){
+    setStatus('Load failed: ' + err.message, true);
+  }
+  e.target.value = '';
+});
+
+document.getElementById('btnUndo').addEventListener('click', ()=>{
+  if(!points.length) return;
+  points.pop();
+  selected = Math.min(selected, points.length - 1);
+  draw();
+});
+document.getElementById('btnClear').addEventListener('click', ()=>{
+  points = []; selected = -1; draw();
+});
+document.getElementById('btnFit').addEventListener('click', ()=>{ fitView(); draw(); });
+
+canvas.addEventListener('contextmenu', e=> e.preventDefault());
+
+let spaceDown = false;
+window.addEventListener('keydown', e=>{
+  if(e.code === 'Space'){ spaceDown = true; e.preventDefault(); }
+  if((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0){
+    if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    points.splice(selected, 1);
+    selected = Math.min(selected, points.length - 1);
+    draw();
+  }
+});
+window.addEventListener('keyup', e=>{ if(e.code === 'Space') spaceDown = false; });
+
+canvas.addEventListener('pointerdown', e=>{
+  canvas.setPointerCapture(e.pointerId);
+  const p = canvasPos(e);
+  if(e.button === 1 || (e.button === 0 && spaceDown)){
+    drag = { kind: 'pan', lastX: p.x, lastY: p.y };
+    return;
+  }
+  if(e.button === 2){
+    const i = hitPoint(p.x, p.y);
+    if(i >= 0){
+      points.splice(i, 1);
+      selected = -1;
+      draw();
+    }
+    return;
+  }
+  if(e.button !== 0) return;
+  const i = hitPoint(p.x, p.y);
+  if(i >= 0){
+    selected = i;
+    drag = { kind: 'point', idx: i };
+    draw();
+    return;
+  }
+  const w = s2w(p.x, p.y);
+  points.push({ x: snap(w.x), z: snap(w.z) });
+  selected = points.length - 1;
+  drag = { kind: 'point', idx: selected };
+  viewFitted = false;
+  draw();
+});
+
+canvas.addEventListener('pointermove', e=>{
+  if(!drag) return;
+  const p = canvasPos(e);
+  if(drag.kind === 'pan'){
+    const dx = (p.x - drag.lastX) / view.scale;
+    const dy = (p.y - drag.lastY) / view.scale;
+    view.ox -= dx; view.oy -= dy;
+    drag.lastX = p.x; drag.lastY = p.y;
+    viewFitted = false;
+    draw();
+    return;
+  }
+  if(drag.kind === 'point'){
+    const w = s2w(p.x, p.y);
+    points[drag.idx].x = snap(w.x);
+    points[drag.idx].z = snap(w.z);
+    draw();
+  }
+});
+
+canvas.addEventListener('pointerup', ()=>{ drag = null; });
+canvas.addEventListener('pointercancel', ()=>{ drag = null; });
+
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const p = canvasPos(e);
+  const dy = e.deltaY;
+  const factor = Math.exp(-dy * (e.deltaMode === 1 ? 0.05 : 0.0015));
+  const before = s2w(p.x, p.y);
+  view.scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, view.scale * factor));
+  const after = s2w(p.x, p.y);
+  view.ox += before.x - after.x;
+  view.oy += before.z - after.z;
+  viewFitted = false;
+  draw();
+}, { passive: false });
+
+async function boot(){
+  resize();
+  window.addEventListener('resize', resize);
+  /* Load indoor or ?track= */
+  try{
+    const man = await (await fetch('tracks/manifest.json', {cache:'no-store'})).json();
+    const id = loadId || 'indoor';
+    const entry = (man || []).find(t => t.id === id) || (man && man[0]);
+    if(entry){
+      const data = await (await fetch('tracks/' + (entry.file || entry.id + '.json'), {cache:'no-store'})).json();
+      const wps = TrackLib.normalizeWayPoints(data);
+      if(wps.length >= 3){
+        points = wps.map(p => ({ x: p[0], z: p[1] }));
+        document.getElementById('trackId').value = data.id || entry.id;
+        document.getElementById('trackName').value = data.name || entry.name || entry.id;
+        fitView();
+        draw();
+        setStatus('Editing ' + (data.name || entry.id));
+        return;
+      }
+    }
+  }catch(_){}
+  points = TrackLib.normalizeWayPoints({
+    wayPoints: [[0,0],[0,20],[20,20],[20,50],[0,50],[0,100],[50,100],[50,20],[60,20],[70,100],[80,100],[70,0]]
+  }).map(p => ({ x: p[0], z: p[1] }));
+  fitView();
+  draw();
+}
+boot();
+</script>
+</body>
+</html>

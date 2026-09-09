@@ -1,0 +1,27 @@
+[
+  {
+    "id": "indoor",
+    "name": "Indoor Circuit",
+    "file": "indoor.json"
+  },
+  {
+    "id": "custom-circuit",
+    "name": "Custom Circuit",
+    "file": "custom-circuit.json"
+  },
+  {
+    "id": "custom-circuit-2",
+    "name": "Custom Circuit 2",
+    "file": "custom-circuit-2.json"
+  },
+  {
+    "id": "custom-circuit-3",
+    "name": "Custom Circuit 3",
+    "file": "custom-circuit-3.json"
+  },
+  {
+    "id": "test1-circuit",
+    "name": "Test1 Circuit",
+    "file": "test1-circuit.json"
+  }
+]

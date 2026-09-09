@@ -1,0 +1,9 @@
+Requirements: Three js low poly gokart game in third person. The game must be a realistic gokart simulator, single player, you just have to drive into a realistic circuit with realistic physics. it must be great for practicing trajectories and racing skills for real life indoor go karts. it must run fluidly in browser with low requirements.
+
+First development notes:
+Open the file in a browser and hit "Start engine." A few notes on what's under the hood:
+Physics — real bicycle-model dynamics, not an arcade car: front/rear slip angles, tyre grip clamped by a friction circle, longitudinal weight transfer under braking/accel, and speed-sensitive steering lock (more angle at parking speed, less at the top of the straight) — so the limit of grip actually behaves like a kart, and pushing past it produces realistic understeer/oversteer rather than a scripted drift.
+Track — a closed indoor circuit (hairpin, chicane, sweepers) built inside a low-poly warehouse shell with pillars, ceiling lights, and continuous red/white curbing plus barrier walls that push back on contact — good for learning where the real edge of the track is.
+Training tools — a live minimap tracing your current line in amber against your best lap in green, a translucent ghost kart that replays your best lap in real time so you can race it, a balance meter showing front/rear grip bias, and lap/best-lap timing.
+Performance — everything is flat-shaded primitive geometry (no textures), one draw call per track layer, instanced ceiling lights, and a fake blob-shadow instead of shadow maps, so it should run smoothly even on modest laptops or phones (touch controls included).
+Press C to switch to a cockpit view for judging apexes more precisely, and R any time you spin or hit a wall to snap back onto the track. All the tuning constants (grip, mass, engine force, steering rate) are grouped in one P = {...} object near the top if you want to sharpen or soften the feel.

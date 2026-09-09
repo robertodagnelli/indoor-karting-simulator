@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Indoor Line — Kart Circuit Trainer</title>
+<style>
+  :root{
+    --bg:#0d0e10; --panel:rgba(18,20,23,0.74); --border:rgba(255,255,255,0.10);
+    --amber:#ffb020; --green:#3ddc84; --red:#ff4d4d; --text:#e7e6e2; --dim:#9aa0a6;
+    --mono: 'JetBrains Mono','Consolas','SF Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:var(--mono);touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;}
+  #c{display:block;position:fixed;inset:0;width:100%;height:100%;outline:none;}
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;backdrop-filter:blur(3px);color:var(--text);}
+
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:10;font-variant-numeric:tabular-nums;}
+  #timing{position:absolute;top:14px;left:14px;padding:10px 14px;min-width:150px;}
+  #timing .row{display:flex;justify-content:space-between;gap:18px;font-size:13px;color:var(--dim);margin:2px 0;}
+  #timing .row span.val{color:var(--text);}
+  #timing .row.best span.val{color:var(--green);}
+  #timing .lapnum{font-size:12px;color:var(--dim);margin-bottom:6px;letter-spacing:.02em;}
+
+  #speedbox{position:absolute;left:14px;bottom:14px;padding:10px 16px;}
+  #speedval{font-size:44px;line-height:1;color:var(--amber);font-weight:600;}
+  #speedunit{font-size:12px;color:var(--dim);margin-left:6px;}
+  #rpmbar{width:150px;height:5px;background:rgba(255,255,255,0.08);margin-top:8px;border-radius:2px;overflow:hidden;}
+  #rpmfill{height:100%;width:0%;background:linear-gradient(90deg,var(--green),var(--amber),var(--red));}
+
+  #minimapWrap{position:absolute;top:14px;right:14px;padding:6px;}
+  #minimap{display:block;width:200px;height:200px;border-radius:2px;}
+
+  #topRightBtns{position:absolute;top:222px;right:14px;display:flex;gap:6px;pointer-events:auto;}
+  #topRightBtns button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:3px;width:40px;height:32px;font-family:var(--mono);font-size:11px;cursor:pointer;}
+  #topRightBtns button:active{background:rgba(255,176,32,0.25);}
+
+  #hint{position:absolute;bottom:14px;right:14px;padding:8px 12px;font-size:11px;color:var(--dim);max-width:220px;text-align:right;}
+
+  #startScreen{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, #1a1d21 0%, #0a0b0c 70%);color:var(--text);z-index:100;display:flex;align-items:center;justify-content:center;}
+  #startInner{max-width:480px;padding:36px;text-align:left;}
+  #startInner h1{font-size:26px;margin:0 0 6px 0;font-weight:600;letter-spacing:-0.01em;}
+  #startInner p.sub{color:var(--dim);margin:0 0 22px 0;font-size:13px;line-height:1.5;}
+  .ctrlgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12.5px;color:var(--dim);margin-bottom:24px;}
+  .ctrlgrid b{color:var(--text);font-weight:600;}
+  #startBtn{background:var(--amber);color:#1a1200;border:none;border-radius:3px;padding:13px 26px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.02em;}
+  #startBtn:active{transform:translateY(1px);}
+  #startInner .foot{margin-top:14px;font-size:11px;color:#666;}
+
+  #touchControls{position:fixed;inset:0;z-index:20;pointer-events:none;display:none;}
+  .tbtn{position:absolute;pointer-events:auto;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;}
+  .tbtn:active{background:rgba(255,176,32,0.35);}
+  #steerL{left:18px;bottom:34px;width:78px;height:78px;}
+  #steerR{left:110px;bottom:34px;width:78px;height:78px;}
+  #gasBtn{right:18px;bottom:34px;width:92px;height:92px;}
+  #brakeBtn{right:120px;bottom:34px;width:78px;height:78px;}
+
+  #muteBtn{position:absolute;top:14px;right:222px;padding:0;width:32px;height:32px;pointer-events:auto;background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer;font-size:14px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="timing" class="panel">
+    <div class="lapnum">lap <span id="lapCount">1</span></div>
+    <div class="row"><span>current</span><span class="val" id="curTime">0:00.000</span></div>
+    <div class="row"><span>last lap</span><span class="val" id="lastTime">--:--.---</span></div>
+    <div class="row best"><span>best lap</span><span class="val" id="bestTime">--:--.---</span></div>
+  </div>
+
+  <div id="speedbox" class="panel">
+    <span id="speedval">0</span><span id="speedunit">km/h</span>
+    <div id="rpmbar"><div id="rpmfill"></div></div>
+  </div>
+
+  <div id="minimapWrap" class="panel"><canvas id="minimap" width="200" height="200"></canvas></div>
+  <button id="muteBtn" title="mute">🔊</button>
+  <div id="topRightBtns">
+    <button id="camBtn">cam</button>
+    <button id="resetBtn">reset</button>
+  </div>
+
+  <div id="hint">R reset · C camera · WASD / arrows drive</div>
+</div>
+
+<div id="touchControls">
+  <div class="tbtn" id="steerL">◀</div>
+  <div class="tbtn" id="steerR">▶</div>
+  <div class="tbtn" id="brakeBtn">▼</div>
+  <div class="tbtn" id="gasBtn">▲</div>
+</div>
+
+<div id="startScreen">
+  <div id="startInner">
+    <h1>Indoor Line</h1>
+    <p class="sub">A low-poly indoor kart circuit for practicing braking points, apexes and throttle control. Arcade-friendly handling with speed-sensitive steering — focused on learning lines, not managing balance.</p>
+    <div class="ctrlgrid">
+      <b>W / ↑</b><span>throttle</span>
+      <b>S / ↓</b><span>brake &amp; reverse</span>
+      <b>A D / ← →</b><span>steer</span>
+      <b>C</b><span>cycle camera (chase / cockpit)</span>
+      <b>R</b><span>reset onto track</span>
+    </div>
+    <button id="startBtn">Start engine</button>
+    <div class="foot">Runs entirely in-browser. Your best lap is kept as a ghost to race against.</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ============================== helpers ============================== */
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function hash01(i){ const x=Math.sin(i*12.9898)*43758.5453; return x-Math.floor(x); }
+
+/* ============================== renderer / scene ============================== */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.5));
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161a);
+scene.fog = new THREE.Fog(0x14161a, 55, 165);
+
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 260);
+
+function onResize(){
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+/* lighting */
+const hemi = new THREE.HemisphereLight(0xdfe6ee, 0x35322c, 0.75);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff3e0, 0.95);
+sun.position.set(40, 60, 20);
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x8fb0ff, 0.25);
+fill.position.set(-40,30,-30);
+scene.add(fill);
+
+/* ============================== track definition ============================== */
+/*
+ * Waypoints form a closed polyline. Long runs stay perfectly straight; corners with
+ * a real turn angle are replaced by circular fillets (hairpins/tight turns stay curved).
+ * Edges are sampled as center+normal*offset on that G1 path — no inner-corner X.
+ */
+const wayPoints = [
+  [0, 0], [0, 20], [20, 20], [20, 50], [0,50], [0, 100], [50,100], [50,20], [60,20], [70, 100], [80,100], [70, 0]
+];
+const HALF_W = 4.2;
+const CURB_W = 0.55;
+const WALL_GAP = 0.25;
+const WALL_H = 0.45;
+const wallOffset = HALF_W+CURB_W+WALL_GAP;
+const SAMPLE_SPACING = 0.85;
+const FILLET_TARGET = 11;                 /* preferred turn radius (m) */
+const FILLET_MIN = wallOffset + 0.75;     /* keep inner wall outside arc center */
+const STRAIGHT_ANG = 6 * Math.PI/180;     /* below this, treat as colinear / no fillet */
+
+const verts = wayPoints.map(p=>({x:p[0], z:p[1]}));
+const MV = verts.length;
+
+function vnorm(x,z){ const l=Math.hypot(x,z)||1; return {x:x/l, z:z/l}; }
+function leftOf(d){ return {x:-d.z, z:d.x}; }
+
+/* Segment lengths and unit dirs (i → i+1) */
+const segLen = [];
+const segDir = [];
+for(let i=0;i<MV;i++){
+  const a=verts[i], b=verts[(i+1)%MV];
+  const dx=b.x-a.x, dz=b.z-a.z;
+  const len=Math.hypot(dx,dz)||1;
+  segLen.push(len);
+  segDir.push({x:dx/len, z:dz/len});
+}
+
+/* Per-corner turn + fillet radius / inset (shared so adjacent fillets fit on a segment) */
+const corner = [];
+for(let i=0;i<MV;i++){
+  const d0 = segDir[(i-1+MV)%MV];
+  const d1 = segDir[i];
+  const cross = d0.x*d1.z - d0.z*d1.x;
+  const dot = clamp(d0.x*d1.x + d0.z*d1.z, -1, 1);
+  const turn = Math.atan2(cross, dot); /* >0 left / CCW, <0 right / CW */
+  const absTurn = Math.abs(turn);
+  let radius = 0, inset = 0, active = false;
+  if(absTurn > STRAIGHT_ANG){
+    active = true;
+    const halfTan = Math.tan(absTurn*0.5);
+    radius = FILLET_TARGET;
+    inset = radius * halfTan;
+  }
+  corner.push({turn, absTurn, radius, inset, active, d0, d1});
+}
+
+/* Fit fillets onto segments: each segment budget split between its two end corners */
+for(let i=0;i<MV;i++){
+  const cA = corner[i];
+  const cB = corner[(i+1)%MV];
+  const budget = segLen[i] * 0.92;
+  let need = (cA.active?cA.inset:0) + (cB.active?cB.inset:0);
+  if(need > budget && need > 1e-6){
+    const s = budget/need;
+    if(cA.active){ cA.inset *= s; cA.radius = cA.inset / Math.tan(cA.absTurn*0.5); }
+    if(cB.active){ cB.inset *= s; cB.radius = cB.inset / Math.tan(cB.absTurn*0.5); }
+  }
+}
+for(let i=0;i<MV;i++){
+  const c = corner[i];
+  if(!c.active) continue;
+  if(c.radius < FILLET_MIN){
+    c.radius = FILLET_MIN;
+    c.inset = c.radius * Math.tan(c.absTurn*0.5);
+  }
+}
+/* Re-fit if min-radius push overflowed a segment */
+for(let i=0;i<MV;i++){
+  const cA = corner[i];
+  const cB = corner[(i+1)%MV];
+  const budget = segLen[i] * 0.92;
+  let need = (cA.active?cA.inset:0) + (cB.active?cB.inset:0);
+  if(need > budget && need > 1e-6){
+    const s = budget/need;
+    if(cA.active){ cA.inset *= s; cA.radius = Math.max(0.5, cA.inset / Math.tan(cA.absTurn*0.5)); }
+    if(cB.active){ cB.inset *= s; cB.radius = Math.max(0.5, cB.inset / Math.tan(cB.absTurn*0.5)); }
+  }
+}
+
+/* Build ordered path pieces: straight runs + circular fillets */
+const pieces = [];
+for(let i=0;i<MV;i++){
+  const v0 = verts[i];
+  const v1 = verts[(i+1)%MV];
+  const d = segDir[i];
+  const c0 = corner[i];
+  const c1 = corner[(i+1)%MV];
+  const startInset = c0.active ? c0.inset : 0;
+  const endInset = c1.active ? c1.inset : 0;
+
+  /* Fillet at vertex i (outgoing start of this segment), except we emit fillet when leaving the corner — emit at vertex i before the straight */
+  if(c0.active){
+    const dIn = segDir[(i-1+MV)%MV];
+    const absTurn = c0.absTurn;
+    const R = c0.radius;
+    const inset = c0.inset;
+    const pStart = {x:v0.x - dIn.x*inset, z:v0.z - dIn.z*inset};
+    const pEnd   = {x:v0.x + d.x*inset,   z:v0.z + d.z*inset};
+    const nIn = leftOf(dIn);
+    const sign = c0.turn >= 0 ? 1 : -1; /* left: center on left; right: on right */
+    const cen = {x:pStart.x + nIn.x*R*sign, z:pStart.z + nIn.z*R*sign};
+    const a0 = Math.atan2(pStart.x-cen.x, pStart.z-cen.z);
+    /* Orbit direction around center is opposite the road-turn sign (see fillet math). */
+    const sweep = -sign * absTurn;
+    pieces.push({type:'arc', cen, R, a0, sweep, pStart, pEnd});
+  }
+
+  const straightA = {x:v0.x + d.x*startInset, z:v0.z + d.z*startInset};
+  const straightB = {x:v1.x - d.x*endInset,   z:v1.z - d.z*endInset};
+  const sLen = Math.hypot(straightB.x-straightA.x, straightB.z-straightA.z);
+  if(sLen > 0.05){
+    pieces.push({type:'line', a:straightA, b:straightB, d});
+  }
+}
+
+/* Sample pieces into centerline + tangents + left normals */
+const center = [];
+const tangents = [];
+const normals = [];
+const cum = [];
+let distAcc = 0;
+
+function pushSample(x, z, tx, tz, stepDist){
+  if(center.length) distAcc += stepDist;
+  cum.push(distAcc);
+  center.push({x, z});
+  tangents.push({x:tx, z:tz});
+  normals.push({x:-tz, z:tx});
+}
+
+for(let pi=0; pi<pieces.length; pi++){
+  const p = pieces[pi];
+  if(p.type==='line'){
+    const dx=p.b.x-p.a.x, dz=p.b.z-p.a.z;
+    const len=Math.hypot(dx,dz)||1;
+    const steps=Math.max(1, Math.round(len/SAMPLE_SPACING));
+    const tx=dx/len, tz=dz/len;
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      pushSample(p.a.x+dx*t, p.a.z+dz*t, tx, tz, s===0?0:len/steps);
+    }
+  } else {
+    const steps=Math.max(4, Math.round(Math.abs(p.sweep)*p.R/SAMPLE_SPACING));
+    const arcLen = Math.abs(p.sweep)*p.R;
+    const sdir = Math.sign(p.sweep) || 1;
+    for(let s=0;s<=steps;s++){
+      const t=s/steps;
+      const ang=p.a0 + p.sweep*t;
+      const x=p.cen.x + p.R*Math.sin(ang);
+      const z=p.cen.z + p.R*Math.cos(ang);
+      const tn=vnorm(Math.cos(ang)*sdir, -Math.sin(ang)*sdir);
+      pushSample(x, z, tn.x, tn.z, s===0?0:arcLen/steps);
+    }
+  }
+}
+
+/* Drop nearly-duplicate consecutive samples from piece joins */
+(function dedupe(){
+  for(let i=center.length-1;i>0;i--){
+    const dx=center[i].x-center[i-1].x, dz=center[i].z-center[i-1].z;
+    if(dx*dx+dz*dz < 1e-6){
+      center.splice(i,1); tangents.splice(i,1); normals.splice(i,1); cum.splice(i,1);
+    }
+  }
+})();
+
+const N = center.length;
+const totalLength = cum[N-1] || distAcc;
+
+let bboxMinX=Infinity,bboxMaxX=-Infinity,bboxMinZ=Infinity,bboxMaxZ=-Infinity;
+center.forEach(p=>{ bboxMinX=Math.min(bboxMinX,p.x); bboxMaxX=Math.max(bboxMaxX,p.x); bboxMinZ=Math.min(bboxMinZ,p.z); bboxMaxZ=Math.max(bboxMaxZ,p.z); });
+
+function edgePoint(i, offset){
+  /* Clamp inner offset on tight fillets so wall never crosses the arc center */
+  let o = offset;
+  const i0=(i-1+N)%N, i1=(i+1)%N;
+  const ax=center[i].x-center[i0].x, az=center[i].z-center[i0].z;
+  const bx=center[i1].x-center[i].x, bz=center[i1].z-center[i].z;
+  const al=Math.hypot(ax,az)||1e-6, bl=Math.hypot(bx,bz)||1e-6;
+  const cross=ax*bz-az*bx;
+  const ang=Math.atan2(cross, ax*bx+az*bz);
+  const kappa=ang/((al+bl)*0.5);
+  if(Math.abs(kappa) > 1e-5){
+    const maxIn = Math.max(0.4, Math.abs(1/kappa) - 0.35);
+    if(o < 0 && kappa < 0) o = Math.max(o, -maxIn);
+    if(o > 0 && kappa > 0) o = Math.min(o, maxIn);
+  }
+  return {x:center[i].x + normals[i].x*o, z:center[i].z + normals[i].z*o};
+}
+
+/* ---- geometry building helpers ---- */
+function makeMesh(positions, colors, normalsArr, opts){
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors,3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normalsArr,3));
+  const mat = new THREE.MeshStandardMaterial(Object.assign({vertexColors:true, flatShading:true, roughness:0.92, metalness:0.02, side:THREE.DoubleSide}, opts||{}));
+  return new THREE.Mesh(g, mat);
+}
+
+function buildFlatRibbon(nearSigned, farSigned, colorFn){
+  const positions=[], colors=[], normalsArr=[];
+  for(let i=0;i<N;i++){
+    const j=(i+1)%N;
+    const inA=edgePoint(i, nearSigned), outA=edgePoint(i, farSigned);
+    const inB=edgePoint(j, nearSigned), outB=edgePoint(j, farSigned);
+    const c=colorFn(cum[i]);
+    positions.push(inA.x,0.0,inA.z, outA.x,0.0,outA.z, outB.x,0.0,outB.z);
+    positions.push(inA.x,0.0,inA.z, outB.x,0.0,outB.z, inB.x,0.0,inB.z);
+    for(let k=0;k<6;k++){ colors.push(c[0],c[1],c[2]); normalsArr.push(0,1,0); }
+  }
+  return makeMesh(positions,colors,normalsArr,{});
+}
+
+function buildWallRibbon(offsetSigned, yBottom, yTop, colorFn){
+  const positions=[], colors=[], normalsArr=[];
+  const sgn = Math.sign(offsetSigned)||1;
+  for(let i=0;i<N;i++){
+    const j=(i+1)%N;
+    const nA=normals[i];
+    const pA=edgePoint(i, offsetSigned), pB=edgePoint(j, offsetSigned);
+    const c=colorFn(cum[i]);
+    positions.push(pA.x,yBottom,pA.z, pA.x,yTop,pA.z, pB.x,yTop,pB.z);
+    positions.push(pA.x,yBottom,pA.z, pB.x,yTop,pB.z, pB.x,yBottom,pB.z);
+    for(let k=0;k<6;k++){ colors.push(c[0],c[1],c[2]); normalsArr.push(nA.x*sgn,0,nA.z*sgn); }
+  }
+  return makeMesh(positions,colors,normalsArr,{side:THREE.DoubleSide});
+}
+
+const trackGroup = new THREE.Group();
+
+/* asphalt */
+const asphaltBase = [0.16,0.165,0.175];
+const road = buildFlatRibbon(-HALF_W, HALF_W, (d)=>{
+  const n = (hash01(Math.floor(d*3))-0.5)*0.02;
+  return [asphaltBase[0]+n, asphaltBase[1]+n, asphaltBase[2]+n];
+});
+road.position.y = 0.01;
+trackGroup.add(road);
+
+/* curbs (red/white every 2m) */
+function curbColor(d){ return (Math.floor(d/2)%2===0) ? [0.82,0.08,0.08] : [0.85,0.85,0.82]; }
+const curbR = buildFlatRibbon(HALF_W, HALF_W+CURB_W, curbColor); curbR.position.y=0.02; trackGroup.add(curbR);
+const curbL = buildFlatRibbon(-HALF_W-CURB_W, -HALF_W, curbColor); curbL.position.y=0.02; trackGroup.add(curbL);
+
+/* barrier walls (white/blue every 4m) */
+function wallColor(d){ return (Math.floor(d/4)%2===0) ? [0.22,0.22,0.24] : [0.08,0.08,0.09]; }
+const wallR = buildWallRibbon(wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallR);
+const wallL = buildWallRibbon(-wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallL);
+
+/* start/finish checker */
+(function(){
+  const startIdx=0;
+  const t0=tangents[startIdx];
+  const yaw0 = Math.atan2(t0.x, t0.z);
+  const grp = new THREE.Group();
+  grp.position.set(center[startIdx].x, 0.03, center[startIdx].z);
+  grp.rotation.y = yaw0;
+  const cols=8, rows=2;
+  const cw=(HALF_W*2)/cols, cl=1.1;
+  for(let r=0;r<rows;r++){
+    for(let cIdx=0;cIdx<cols;cIdx++){
+      const geo = new THREE.BoxGeometry(cw*0.96,0.02,cl*0.96);
+      const col = (r+cIdx)%2===0 ? 0x111111 : 0xf2f2ee;
+      const mat = new THREE.MeshStandardMaterial({color:col, flatShading:true, roughness:0.8});
+      const m = new THREE.Mesh(geo,mat);
+      m.position.set((cIdx-(cols-1)/2)*cw, 0, (r-(rows-1)/2)*cl);
+      grp.add(m);
+    }
+  }
+  trackGroup.add(grp);
+})();
+
+scene.add(trackGroup);
+
+/* ============================== warehouse environment ============================== */
+const roomMinX=bboxMinX-26, roomMaxX=bboxMaxX+26, roomMinZ=bboxMinZ-26, roomMaxZ=bboxMaxZ+26;
+const roomW=roomMaxX-roomMinX, roomD=roomMaxZ-roomMinZ;
+const roomCX=(roomMinX+roomMaxX)/2, roomCZ=(roomMinZ+roomMaxZ)/2;
+const CEIL_H=13;
+
+const floorMat = new THREE.MeshStandardMaterial({color:0x6a6e72, roughness:0.98, flatShading:true});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomW,roomD,1,1), floorMat);
+floor.rotation.x=-Math.PI/2; floor.position.set(roomCX,0,roomCZ);
+scene.add(floor);
+
+const wallMat = new THREE.MeshStandardMaterial({color:0x8a8e94, roughness:0.95, flatShading:true});
+const stripeMat = new THREE.MeshStandardMaterial({color:0x6a6e74, roughness:0.9, flatShading:true});
+function addWall(w,h,d,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat); m.position.set(x,y,z); scene.add(m); return m; }
+addWall(roomW, CEIL_H, 0.6, roomCX, CEIL_H/2, roomMinZ);
+addWall(roomW, CEIL_H, 0.6, roomCX, CEIL_H/2, roomMaxZ);
+addWall(0.6, CEIL_H, roomD, roomMinX, CEIL_H/2, roomCZ);
+addWall(0.6, CEIL_H, roomD, roomMaxX, CEIL_H/2, roomCZ);
+function addStripe(w,d,x,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,1.3,d), stripeMat); m.position.set(x,3.2,z); scene.add(m); }
+addStripe(roomW,0.66,roomCX,roomMinZ+0.05);
+addStripe(roomW,0.66,roomCX,roomMaxZ-0.05);
+addStripe(0.66,roomD,roomMinX+0.05,roomCZ);
+addStripe(0.66,roomD,roomMaxX-0.05,roomCZ);
+
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomW,roomD), new THREE.MeshStandardMaterial({color:0x24252a, roughness:1, side:THREE.DoubleSide}));
+ceiling.rotation.x=Math.PI/2; ceiling.position.set(roomCX,CEIL_H,roomCZ);
+scene.add(ceiling);
+
+/* ceiling light fixtures (instanced) */
+(function(){
+  const cols = Math.max(2,Math.round(roomW/14));
+  const rows = Math.max(2,Math.round(roomD/14));
+  const count = cols*rows;
+  const geo = new THREE.BoxGeometry(4.2,0.18,0.9);
+  const mat = new THREE.MeshStandardMaterial({color:0xfff6df, emissive:0xfff6df, emissiveIntensity:1.4, roughness:1});
+  const inst = new THREE.InstancedMesh(geo, mat, count);
+  const mtx = new THREE.Matrix4();
+  let k=0;
+  for(let r=0;r<rows;r++){
+    for(let c2=0;c2<cols;c2++){
+      const x = roomMinX + (c2+0.5)*(roomW/cols);
+      const z = roomMinZ + (r+0.5)*(roomD/rows);
+      mtx.makeTranslation(x, CEIL_H-0.25, z);
+      inst.setMatrixAt(k++, mtx);
+    }
+  }
+  inst.instanceMatrix.needsUpdate=true;
+  scene.add(inst);
+})();
+
+/* pillars near the room perimeter, kept clear of the track */
+(function(){
+  const pillarGeo = new THREE.CylinderGeometry(0.55,0.6,CEIL_H,8);
+  const pillarMat = new THREE.MeshStandardMaterial({color:0xc62828, roughness:0.85, flatShading:true});
+  const margin = 6;
+  const spots = [
+    [roomMinX+margin, roomMinZ+margin],[roomMaxX-margin, roomMinZ+margin],
+    [roomMinX+margin, roomMaxZ-margin],[roomMaxX-margin, roomMaxZ-margin],
+    [roomCX, roomMinZ+margin],[roomCX, roomMaxZ-margin],
+    [roomMinX+margin, roomCZ],[roomMaxX-margin, roomCZ]
+  ];
+  spots.forEach(([x,z])=>{
+    const m = new THREE.Mesh(pillarGeo,pillarMat);
+    m.position.set(x, CEIL_H/2, z);
+    scene.add(m);
+  });
+})();
+
+/* soft blob shadow under kart (cheap fake shadow) — removed */
+
+/* ============================== kart model ============================== */
+function createKart(ghost){
+  const group = new THREE.Group();
+  const matOpts = ghost
+    ? {transparent:true, opacity:0.32, flatShading:true, roughness:0.85}
+    : {flatShading:true, roughness:0.82, metalness:0.08};
+  function mat(c, extra){ return new THREE.MeshStandardMaterial(Object.assign({color:c}, matOpts, extra||{})); }
+
+  const COL_BODY = ghost ? 0x2a4a7a : 0xd61f1f;
+  const COL_ACCENT = ghost ? 0x5a9dff : 0xd61f1f;
+  const COL_WHITE = ghost ? 0xa8c8ef : 0xf2f2f0;
+  const COL_BUMP = ghost ? 0x1a3050 : 0x0a0a0a;
+  const COL_SEAT = ghost ? 0x203040 : 0x141414;
+  const COL_BAR = ghost ? 0x304860 : 0x1c1c1c;
+  const COL_TIRE = 0x111111;
+  const COL_FLOOR = ghost ? 0x1a3050 : 0x111111;
+  const COL_HELMET = ghost ? 0x5a9dff : 0xd61f1f;
+
+  /* --- continuous closed bumper ring (tires sit inside) --- */
+  const bumpH = 0.22, bumpY = 0.20;
+  const outerW = 1.72, outerL = 2.35;
+  const bumpT = 0.14;
+
+  const bumpF = new THREE.Mesh(new THREE.BoxGeometry(outerW, bumpH, bumpT), mat(COL_BUMP));
+  bumpF.position.set(0, bumpY, outerL*0.5 - bumpT*0.5);
+  group.add(bumpF);
+  const bumpR = new THREE.Mesh(new THREE.BoxGeometry(outerW, bumpH, bumpT), mat(COL_BUMP));
+  bumpR.position.set(0, bumpY, -outerL*0.5 + bumpT*0.5);
+  group.add(bumpR);
+  const sideLen = outerL - bumpT*2;
+  const bumpSL = new THREE.Mesh(new THREE.BoxGeometry(bumpT, bumpH, sideLen), mat(COL_BUMP));
+  bumpSL.position.set(outerW*0.5 - bumpT*0.5, bumpY, 0);
+  group.add(bumpSL);
+  const bumpSR = new THREE.Mesh(new THREE.BoxGeometry(bumpT, bumpH, sideLen), mat(COL_BUMP));
+  bumpSR.position.set(-outerW*0.5 + bumpT*0.5, bumpY, 0);
+  group.add(bumpSR);
+
+  /* LED headlight strips */
+  if(!ghost){
+    const ledMat = mat(0xffffff, {emissive:0xffffff, emissiveIntensity:1.6, roughness:0.4});
+    const ledL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.04), ledMat);
+    ledL.position.set(0.38, bumpY+0.02, outerL*0.5 - 0.02);
+    group.add(ledL);
+    const ledR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.04), ledMat);
+    ledR.position.set(-0.38, bumpY+0.02, outerL*0.5 - 0.02);
+    group.add(ledR);
+  }
+
+  /* floor pan */
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(outerW - bumpT*2.2, 0.05, outerL - bumpT*2.2), mat(COL_FLOOR));
+  floor.position.set(0, 0.08, 0);
+  group.add(floor);
+
+  /* nose / front fairing */
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.28, 0.72), mat(COL_BODY));
+  nose.position.set(0, 0.34, 0.72);
+  group.add(nose);
+  const noseTip = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.28), mat(COL_BODY));
+  noseTip.position.set(0, 0.30, 1.12);
+  group.add(noseTip);
+
+  /* white nose accents */
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.55), mat(COL_WHITE));
+  stripe.position.set(0, 0.49, 0.70);
+  group.add(stripe);
+  const stripeW = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 0.40), mat(COL_WHITE));
+  stripeW.position.set(0, 0.505, 0.72);
+  group.add(stripeW);
+
+  /* side pods covering wheels */
+  const podGeo = new THREE.BoxGeometry(0.28, 0.26, 1.05);
+  const podL = new THREE.Mesh(podGeo, mat(COL_BODY)); podL.position.set(0.58, 0.30, 0.05); group.add(podL);
+  const podR = new THREE.Mesh(podGeo, mat(COL_BODY)); podR.position.set(-0.58, 0.30, 0.05); group.add(podR);
+  const flashL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.60), mat(COL_WHITE));
+  flashL.position.set(0.70, 0.34, 0.15); group.add(flashL);
+  const flashR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.60), mat(COL_WHITE));
+  flashR.position.set(-0.70, 0.34, 0.15); group.add(flashR);
+  const flashWL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.28), mat(COL_WHITE));
+  flashWL.position.set(0.72, 0.38, -0.15); group.add(flashWL);
+  const flashWR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.28), mat(COL_WHITE));
+  flashWR.position.set(-0.72, 0.38, -0.15); group.add(flashWR);
+
+  /* center spine / battery cover */
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.18, 0.9), mat(COL_BODY));
+  spine.position.set(0, 0.28, 0.05);
+  group.add(spine);
+
+  /* rear deck */
+  const rearDeck = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.16, 0.45), mat(COL_BODY));
+  rearDeck.position.set(0, 0.30, -0.75);
+  group.add(rearDeck);
+
+  /* bucket seat */
+  const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.42), mat(COL_SEAT));
+  seatBase.position.set(0, 0.36, -0.28);
+  group.add(seatBase);
+  const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.52, 0.12), mat(COL_SEAT));
+  seatBack.position.set(0, 0.62, -0.48);
+  group.add(seatBack);
+  const seatSideL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.38), mat(COL_SEAT));
+  seatSideL.position.set(0.23, 0.48, -0.32); group.add(seatSideL);
+  const seatSideR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.38), mat(COL_SEAT));
+  seatSideR.position.set(-0.23, 0.48, -0.32); group.add(seatSideR);
+
+  /* roll hoop */
+  const barMat = mat(COL_BAR);
+  const hoopL = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.72,6), barMat);
+  hoopL.position.set(0.26, 0.78, -0.62); group.add(hoopL);
+  const hoopR = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.72,6), barMat);
+  hoopR.position.set(-0.26, 0.78, -0.62); group.add(hoopR);
+  const hoopTop = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.58,6), barMat);
+  hoopTop.rotation.z = Math.PI/2; hoopTop.position.set(0, 1.12, -0.62); group.add(hoopTop);
+  const hoopBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.35,6), barMat);
+  hoopBrace.rotation.x = Math.PI/2; hoopBrace.position.set(0, 0.95, -0.78); group.add(hoopBrace);
+
+  /* steering wheel */
+  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 12), mat(COL_BAR));
+  wheelRim.rotation.x = Math.PI/2 * 0.85;
+  wheelRim.position.set(0, 0.58, 0.38);
+  group.add(wheelRim);
+
+  /* driver */
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.26), mat(ghost ? 0x3a6aaa : 0x1a1a1a));
+  torso.position.set(0, 0.68, -0.22);
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mat(COL_HELMET));
+  head.position.set(0, 0.96, -0.20);
+  group.add(head);
+
+  /* smaller tires tucked inside bodywork */
+  function makeWheel(r,w,c){
+    const g = new THREE.CylinderGeometry(r,r,w,10);
+    g.rotateZ(Math.PI/2);
+    return new THREE.Mesh(g, mat(c));
+  }
+  const rF=0.175, wF=0.16, rR=0.195, wR=0.20;
+  const Lf=0.78, Lr=0.72, track=0.58;
+
+  const steerFL = new THREE.Group(); steerFL.position.set(track, rF, Lf);
+  const wheelFL = makeWheel(rF,wF,COL_TIRE); steerFL.add(wheelFL); group.add(steerFL);
+  const steerFR = new THREE.Group(); steerFR.position.set(-track, rF, Lf);
+  const wheelFR = makeWheel(rF,wF,COL_TIRE); steerFR.add(wheelFR); group.add(steerFR);
+
+  const wheelRL = makeWheel(rR,wR,COL_TIRE); wheelRL.position.set(track, rR, -Lr); group.add(wheelRL);
+  const wheelRR = makeWheel(rR,wR,COL_TIRE); wheelRR.position.set(-track, rR, -Lr); group.add(wheelRR);
+
+  if(ghost){
+    group.traverse(o=>{ if(o.isMesh){ o.material.transparent=true; o.material.opacity=0.30; } });
+  }
+
+  return {group, steerFL, steerFR, wheelFL, wheelFR, wheelRL, wheelRR, rF, rR, outerHalfW: outerW*0.5};
+}
+
+const kart = createKart(false);
+scene.add(kart.group);
+
+const ghostKart = createKart(true);
+ghostKart.group.visible = false;
+scene.add(ghostKart.group);
+
+/* ============================== physics ============================== */
+const P = {
+  mass: 210, g: 9.81,
+  Lf: 0.85, Lr: 0.75, Iz: 90,
+  Cf: 16000, Cr: 17500,
+  muTire: 1.95,
+  maxEngineForce: 1200,
+  maxBrakeForce: 2000,
+  dragCoeff: 1.5, rollResist: 20,
+  steerRateLow: 0.6, steerRateHigh: 0.15, steerSpeedRef: 18,
+  steerRate: 6.0,
+  /* Outer closed bumper half-width */
+  kartHalfWidth: 0.88
+};
+
+function maxSteerFor(u){
+  const t = clamp(Math.abs(u)/P.steerSpeedRef, 0, 1);
+  return lerp(P.steerRateLow, P.steerRateHigh, t);
+}
+
+const startIdxYaw = Math.atan2(tangents[0].x, tangents[0].z);
+const state = {
+  x: center[0].x - normals[0].x*1.2, z: center[0].z - normals[0].z*1.2,
+  yaw: startIdxYaw, vx:0, vz:0, r:0, steerAngle:0,
+  slip:0, slide:0, speed:0,
+  trackIdx:0, prevIdx:0,
+  lapStartTime: performance.now(), lapCount:1,
+  lastLapTime:null, bestLapTime:null,
+  currentLapPath: [], bestLapPath: null, ghostCursor:0
+};
+findInitialTrackIndex();
+function findInitialTrackIndex(){
+  let best=Infinity, bestI=0;
+  for(let i=0;i<N;i++){
+    const dx=state.x-center[i].x, dz=state.z-center[i].z;
+    const d=dx*dx+dz*dz;
+    if(d<best){best=d;bestI=i;}
+  }
+  state.trackIdx=bestI; state.prevIdx=bestI;
+}
+
+function resetKart(){
+  state.x = center[0].x - normals[0].x*1.2;
+  state.z = center[0].z - normals[0].z*1.2;
+  state.yaw = startIdxYaw;
+  state.vx=0; state.vz=0; state.r=0; state.steerAngle=0;
+  findInitialTrackIndex();
+}
+
+function stepPhysics(dt, input){
+  const forwardX=Math.sin(state.yaw), forwardZ=Math.cos(state.yaw);
+  const rightX=Math.cos(state.yaw), rightZ=-Math.sin(state.yaw);
+  let u = state.vx*forwardX + state.vz*forwardZ;
+  let vlat = state.vx*rightX + state.vz*rightZ;
+  let r = state.r;
+
+  const targetSteer = input.steer * maxSteerFor(u);
+  state.steerAngle += clamp(targetSteer-state.steerAngle, -P.steerRate*dt, P.steerRate*dt);
+  const delta = state.steerAngle;
+
+  let Fx = 0;
+  if(Math.abs(u) < 0.6 && input.brake>0 && input.throttle<=0){
+    Fx -= input.brake*P.maxEngineForce*0.55;
+  } else {
+    Fx += input.throttle*P.maxEngineForce;
+    if(input.brake>0) Fx -= input.brake*P.maxBrakeForce*(u>=0?1:-1);
+  }
+  Fx -= P.dragCoeff*u*Math.abs(u) + P.rollResist*u;
+
+  const SLIDE_MIN = 10/3.6; /* no lateral slip below 10 km/h */
+  const wheelbase = P.Lf + P.Lr;
+  let slip = 0;
+  let slide = 0;
+
+  if(Math.abs(u) < SLIDE_MIN){
+    /* Arcade kinematic mode: turn without sliding. */
+    vlat = 0;
+    r = (Math.abs(u) < 0.05) ? 0 : (u * Math.tan(delta) / wheelbase);
+    u += (Fx/P.mass)*dt;
+  } else {
+    const uSafe = (u>=0?1:-1) * Math.max(Math.abs(u), 1.4);
+    const alphaFront = Math.atan2(vlat + P.Lf*r, uSafe) - delta;
+    const alphaRear  = Math.atan2(vlat - P.Lr*r, uSafe);
+    const FzFront = P.mass*P.g*P.Lr/wheelbase;
+    const FzRear  = P.mass*P.g*P.Lf/wheelbase;
+    const FyFront = clamp(-P.Cf*alphaFront, -P.muTire*FzFront, P.muTire*FzFront);
+    const FyRear  = clamp(-P.Cr*alphaRear,  -P.muTire*FzRear,  P.muTire*FzRear);
+
+    const uDot = Fx/P.mass + vlat*r - (FyFront*Math.sin(delta))/P.mass;
+    const vlatDot = (FyFront*Math.cos(delta)+FyRear)/P.mass - u*r;
+    const rDot = (P.Lf*FyFront*Math.cos(delta) - P.Lr*FyRear)/P.Iz;
+
+    u += uDot*dt;
+    vlat += vlatDot*dt;
+    r += rDot*dt;
+    slip = Math.max(Math.abs(alphaFront), Math.abs(alphaRear));
+    /* How far past the friction limit (0 = still gripping / normal turn). */
+    const sat = Math.max(
+      Math.abs(P.Cf*alphaFront)/(P.muTire*FzFront),
+      Math.abs(P.Cr*alphaRear)/(P.muTire*FzRear)
+    );
+    slide = Math.max(0, sat - 1.30);
+
+    /* Blend out any remaining slip as speed approaches the threshold. */
+    if(Math.abs(u) < SLIDE_MIN*1.25){
+      const k = clamp((Math.abs(u)-SLIDE_MIN)/(SLIDE_MIN*0.25), 0, 1);
+      vlat *= k;
+      slip *= k;
+      slide *= k;
+    }
+  }
+
+  state.r = r;
+  state.yaw += r*dt;
+
+  const fX2=Math.sin(state.yaw), fZ2=Math.cos(state.yaw);
+  const rX2=Math.cos(state.yaw), rZ2=-Math.sin(state.yaw);
+  state.vx = u*fX2 + vlat*rX2;
+  state.vz = u*fZ2 + vlat*rZ2;
+  state.x += state.vx*dt;
+  state.z += state.vz*dt;
+
+  state.uLocal = u;
+  state.slip = slip;
+  state.slide = slide;
+  state.speed = Math.hypot(state.vx, state.vz);
+}
+
+function updateTrackIndexAndCollide(){
+  let best=Infinity, bestI=state.trackIdx;
+  for(let k=-14;k<=14;k++){
+    const idx=((state.trackIdx+k)%N+N)%N;
+    const dx=state.x-center[idx].x, dz=state.z-center[idx].z;
+    const d=dx*dx+dz*dz;
+    if(d<best){best=d;bestI=idx;}
+  }
+  state.trackIdx=bestI;
+  const nrm = normals[bestI];
+  const dx=state.x-center[bestI].x, dz=state.z-center[bestI].z;
+  const offset = dx*nrm.x + dz*nrm.z;
+  /* Collide at the visual barrier (blue/gray wall), not the asphalt/curb edge. */
+  const side = offset >= 0 ? 1 : -1;
+  const wallPt = edgePoint(bestI, side * wallOffset);
+  const wallDist = Math.hypot(wallPt.x - center[bestI].x, wallPt.z - center[bestI].z);
+  const limit = Math.max(0.2, wallDist - P.kartHalfWidth);
+  if(Math.abs(offset) > limit){
+    const vn = state.vx*nrm.x + state.vz*nrm.z;
+    const intoWall = vn * side; /* >0 when moving into this wall */
+    if(intoWall > 0.8) playWallImpact(intoWall);
+    const excess = Math.abs(offset)-limit;
+    state.x -= nrm.x*side*excess;
+    state.z -= nrm.z*side*excess;
+    const newVn = -0.22*vn;
+    state.vx += nrm.x*(newVn-vn);
+    state.vz += nrm.z*(newVn-vn);
+    state.vx *= 0.975; state.vz *= 0.975;
+  }
+  return bestI;
+}
+
+function checkLap(idx, nowMs){
+  const highZone = N*0.85, lowZone = N*0.15;
+  if(state.prevIdx>highZone && idx<lowZone){
+    const t = nowMs - state.lapStartTime;
+    if(t > 8000){
+      state.lastLapTime = t;
+      if(state.bestLapTime===null || t<state.bestLapTime){
+        state.bestLapTime = t;
+        state.bestLapPath = state.currentLapPath.slice();
+      }
+      state.currentLapPath = [];
+      state.ghostCursor = 0;
+      state.lapStartTime = nowMs;
+      state.lapCount++;
+    }
+  }
+  state.prevIdx = idx;
+}
+
+/* ============================== input ============================== */
+const keys = {};
+window.addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
+  if(e.code==='KeyR') resetKart();
+  if(e.code==='KeyC') cycleCamera();
+});
+window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+const touch = {left:false,right:false,gas:false,brake:false};
+function bindTouchBtn(el, prop){
+  const on=(e)=>{ touch[prop]=true; e.preventDefault(); };
+  const off=(e)=>{ touch[prop]=false; e.preventDefault(); };
+  el.addEventListener('touchstart', on, {passive:false});
+  el.addEventListener('touchend', off, {passive:false});
+  el.addEventListener('touchcancel', off, {passive:false});
+  el.addEventListener('mousedown', on);
+  window.addEventListener('mouseup', off);
+}
+bindTouchBtn(document.getElementById('steerL'),'left');
+bindTouchBtn(document.getElementById('steerR'),'right');
+bindTouchBtn(document.getElementById('gasBtn'),'gas');
+bindTouchBtn(document.getElementById('brakeBtn'),'brake');
+
+if('ontouchstart' in window || navigator.maxTouchPoints>0){
+  document.getElementById('touchControls').style.display='block';
+}
+
+function getInput(){
+  const left = keys['ArrowLeft']||keys['KeyA']||touch.left;
+  const right = keys['ArrowRight']||keys['KeyD']||touch.right;
+  const gas = keys['ArrowUp']||keys['KeyW']||touch.gas;
+  const brake = keys['ArrowDown']||keys['KeyS']||touch.brake;
+  return {
+    /* Positive steer = left (bicycle model / +yaw). A/← left, D/→ right. */
+    steer: (left?1:0) - (right?1:0),
+    throttle: gas?1:0,
+    brake: brake?1:0
+  };
+}
+
+/* ============================== camera ============================== */
+const camModes = ['chase','cockpit'];
+let camModeIdx = 0;
+function cycleCamera(){ camModeIdx = (camModeIdx+1)%camModes.length; }
+document.getElementById('camBtn').addEventListener('click', cycleCamera);
+document.getElementById('resetBtn').addEventListener('click', resetKart);
+
+const camPos = new THREE.Vector3(0,4,-8);
+const camLook = new THREE.Vector3(0,0,0);
+let camInit = false;
+
+function updateCamera(dt){
+  const fX=Math.sin(state.yaw), fZ=Math.cos(state.yaw);
+  const mode = camModes[camModeIdx];
+  let targetPos, targetLook, targetFov;
+
+  if(mode==='chase'){
+    targetPos = new THREE.Vector3(state.x - fX*4.0, 1.85, state.z - fZ*4.0);
+    targetLook = new THREE.Vector3(state.x + fX*2.4, 0.75, state.z + fZ*2.4);
+    targetFov = 58 + clamp(state.speed*0.35, 0, 4);
+  } else {
+    targetPos = new THREE.Vector3(state.x + fX*0.05, 0.98, state.z + fZ*0.05);
+    targetLook = new THREE.Vector3(state.x + fX*10, 0.85, state.z + fZ*10);
+    targetFov = 68 + clamp(state.speed*0.4, 0, 5);
+  }
+
+  if(!camInit){ camPos.copy(targetPos); camLook.copy(targetLook); camInit=true; }
+  const k = 1 - Math.exp(-dt*(mode==='cockpit'?12:6));
+  camPos.lerp(targetPos, k);
+  camLook.lerp(targetLook, k);
+  camera.position.copy(camPos);
+  camera.lookAt(camLook);
+  if(Math.abs(camera.fov-targetFov)>0.05){ camera.fov = lerp(camera.fov,targetFov,0.1); camera.updateProjectionMatrix(); }
+
+  kart.group.visible = (mode!=='cockpit');
+}
+
+/* ============================== minimap ============================== */
+const miniCanvas = document.getElementById('minimap');
+const mctx = miniCanvas.getContext('2d');
+const MM = 200, MM_PAD = 14;
+const mmScale = (MM - MM_PAD*2) / Math.max(bboxMaxX-bboxMinX, bboxMaxZ-bboxMinZ);
+const mmSpanX = (bboxMaxX-bboxMinX)*mmScale, mmSpanZ=(bboxMaxZ-bboxMinZ)*mmScale;
+const mmOffX = (MM-mmSpanX)/2, mmOffZ=(MM-mmSpanZ)/2;
+function w2m(x,z){
+  return { x: mmOffX + (x-bboxMinX)*mmScale, y: mmOffZ + (z-bboxMinZ)*mmScale };
+}
+const bgCanvas = document.createElement('canvas'); bgCanvas.width=MM; bgCanvas.height=MM;
+(function(){
+  const bctx = bgCanvas.getContext('2d');
+  bctx.clearRect(0,0,MM,MM);
+  bctx.beginPath();
+  for(let i=0;i<=N;i++){ const p=center[i%N]; const m=w2m(p.x,p.z); if(i===0) bctx.moveTo(m.x,m.y); else bctx.lineTo(m.x,m.y); }
+  bctx.closePath();
+  bctx.strokeStyle='rgba(255,255,255,0.35)';
+  bctx.lineWidth = Math.max(2, HALF_W*2*mmScale);
+  bctx.lineJoin='round'; bctx.stroke();
+  bctx.strokeStyle='rgba(10,10,10,0.9)';
+  bctx.lineWidth = Math.max(1, HALF_W*1.2*mmScale);
+  bctx.stroke();
+  const s0=w2m(center[0].x,center[0].z);
+  bctx.fillStyle='#ffb020'; bctx.beginPath(); bctx.arc(s0.x,s0.y,2.5,0,7); bctx.fill();
+})();
+
+function drawMinimap(){
+  mctx.clearRect(0,0,MM,MM);
+  mctx.drawImage(bgCanvas,0,0);
+
+  if(state.bestLapPath && state.bestLapPath.length>1){
+    mctx.beginPath();
+    for(let i=0;i<state.bestLapPath.length;i++){
+      const p=state.bestLapPath[i]; const m=w2m(p.x,p.z);
+      if(i===0) mctx.moveTo(m.x,m.y); else mctx.lineTo(m.x,m.y);
+    }
+    mctx.strokeStyle='rgba(61,220,132,0.85)'; mctx.lineWidth=1.6; mctx.stroke();
+  }
+  if(state.currentLapPath.length>1){
+    mctx.beginPath();
+    const arr=state.currentLapPath;
+    const startI = Math.max(0, arr.length-1200);
+    for(let i=startI;i<arr.length;i++){
+      const p=arr[i]; const m=w2m(p.x,p.z);
+      if(i===startI) mctx.moveTo(m.x,m.y); else mctx.lineTo(m.x,m.y);
+    }
+    mctx.strokeStyle='rgba(255,176,32,0.9)'; mctx.lineWidth=1.6; mctx.stroke();
+  }
+  const km = w2m(state.x,state.z);
+  mctx.save();
+  mctx.translate(km.x,km.y);
+  mctx.rotate(state.yaw);
+  mctx.fillStyle='#ffffff';
+  mctx.beginPath();
+  mctx.moveTo(0,-4.5); mctx.lineTo(3,3.5); mctx.lineTo(-3,3.5); mctx.closePath();
+  mctx.fill();
+  mctx.restore();
+}
+
+/* ============================== audio ============================== */
+/*
+ * Electric-kart audio:
+ *  - idle / stopped: silent
+ *  - crawl: soft low hum (quieter at speed)
+ *  - accel: rising high whirr
+ *  - speed: road/wind noise
+ *  - slip: sharp high-pitched scrub + grit scrape + abrupt bark/chirp
+ */
+let audioCtx=null, muted=false;
+let motorMaster=null, humOsc=null, humGain=null, whirrOsc=null, whirrOsc2=null, whirrGain=null, whirrFilter=null;
+let roadGain=null, roadFilter=null;
+let screechGain=null, screechFilter=null, screechFilter2=null;
+let screechTone=null, screechToneGain=null, screechTone2=null, screechTone2Gain=null;
+let gritGain=null, gritFilter=null;
+let barkGain=null, barkFilter=null;
+let screechLfo=null, screechLfoGain=null;
+let prevSlideAudio = 0;
+let lastImpactAt = 0;
+let impactNoiseBuf=null;
+
+function makeNoiseBuffer(ctx, seconds, pink){
+  const n = Math.floor(ctx.sampleRate*seconds);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  if(!pink){
+    for(let i=0;i<n;i++) data[i]=Math.random()*2-1;
+  } else {
+    let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+    for(let i=0;i<n;i++){
+      const w=Math.random()*2-1;
+      b0=0.99886*b0+w*0.0555179;
+      b1=0.99332*b1+w*0.0750759;
+      b2=0.96900*b2+w*0.1538520;
+      b3=0.86650*b3+w*0.3104856;
+      b4=0.55000*b4+w*0.5329522;
+      b5=-0.7616*b5-w*0.0168980;
+      const p=b0+b1+b2+b3+b4+b5+b6+w*0.5362;
+      b6=w*0.115926;
+      data[i]=p*0.11;
+    }
+  }
+  return buf;
+}
+
+function initAudio(){
+  try{
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+
+    motorMaster = audioCtx.createGain();
+    motorMaster.gain.value = 0;
+    motorMaster.connect(audioCtx.destination);
+
+    /* Low hum — soft crawl presence */
+    humOsc = audioCtx.createOscillator();
+    humOsc.type = 'sine';
+    humOsc.frequency.value = 55;
+    humGain = audioCtx.createGain();
+    humGain.gain.value = 0;
+    const humFilter = audioCtx.createBiquadFilter();
+    humFilter.type = 'lowpass';
+    humFilter.frequency.value = 160;
+    humOsc.connect(humFilter); humFilter.connect(humGain); humGain.connect(motorMaster);
+    humOsc.start();
+
+    /* High whirr — acceleration / motor spin */
+    whirrOsc = audioCtx.createOscillator();
+    whirrOsc.type = 'sine';
+    whirrOsc.frequency.value = 220;
+    whirrOsc2 = audioCtx.createOscillator();
+    whirrOsc2.type = 'triangle';
+    whirrOsc2.frequency.value = 440;
+    whirrFilter = audioCtx.createBiquadFilter();
+    whirrFilter.type = 'bandpass';
+    whirrFilter.frequency.value = 900;
+    whirrFilter.Q.value = 2.2;
+    whirrGain = audioCtx.createGain();
+    whirrGain.gain.value = 0;
+    const whirrMix = audioCtx.createGain();
+    whirrMix.gain.value = 0.55;
+    const whirrMix2 = audioCtx.createGain();
+    whirrMix2.gain.value = 0.22;
+    whirrOsc.connect(whirrMix); whirrMix.connect(whirrFilter);
+    whirrOsc2.connect(whirrMix2); whirrMix2.connect(whirrFilter);
+    whirrFilter.connect(whirrGain); whirrGain.connect(motorMaster);
+    whirrOsc.start(); whirrOsc2.start();
+
+    /* Road / wind */
+    const roadBuf = makeNoiseBuffer(audioCtx, 2.0, true);
+    const roadSrc = audioCtx.createBufferSource();
+    roadSrc.buffer = roadBuf; roadSrc.loop = true;
+    roadFilter = audioCtx.createBiquadFilter();
+    roadFilter.type = 'bandpass';
+    roadFilter.frequency.value = 280;
+    roadFilter.Q.value = 0.55;
+    const roadAir = audioCtx.createBiquadFilter();
+    roadAir.type = 'highpass';
+    roadAir.frequency.value = 400;
+    roadGain = audioCtx.createGain();
+    roadGain.gain.value = 0;
+    roadSrc.connect(roadFilter); roadFilter.connect(roadAir); roadAir.connect(roadGain); roadGain.connect(audioCtx.destination);
+    roadSrc.start();
+
+    /* === Kart tire scrub: high piercing squeal (only when past grip) === */
+    const skidPink = makeNoiseBuffer(audioCtx, 1.5, true);
+    const skidWhite = makeNoiseBuffer(audioCtx, 1.0, false);
+    impactNoiseBuf = skidWhite;
+    const skidSrc = audioCtx.createBufferSource();
+    skidSrc.buffer = skidPink; skidSrc.loop = true;
+    const gritSrc = audioCtx.createBufferSource();
+    gritSrc.buffer = skidWhite; gritSrc.loop = true;
+
+    /* Narrow high-frequency scrub bands (not windy midrange) */
+    screechFilter = audioCtx.createBiquadFilter();
+    screechFilter.type = 'bandpass';
+    screechFilter.frequency.value = 4500;
+    screechFilter.Q.value = 14;
+
+    screechFilter2 = audioCtx.createBiquadFilter();
+    screechFilter2.type = 'bandpass';
+    screechFilter2.frequency.value = 7200;
+    screechFilter2.Q.value = 16;
+
+    screechGain = audioCtx.createGain();
+    screechGain.gain.value = 0;
+
+    const skidSplit1 = audioCtx.createGain(); skidSplit1.gain.value = 0.7;
+    const skidSplit2 = audioCtx.createGain(); skidSplit2.gain.value = 0.55;
+    skidSrc.connect(skidSplit1); skidSplit1.connect(screechFilter); screechFilter.connect(screechGain);
+    skidSrc.connect(skidSplit2); skidSplit2.connect(screechFilter2); screechFilter2.connect(screechGain);
+    screechGain.connect(audioCtx.destination);
+
+    /* Fine high grit (abrasive rubber), kept thin */
+    gritFilter = audioCtx.createBiquadFilter();
+    gritFilter.type = 'bandpass';
+    gritFilter.frequency.value = 3800;
+    gritFilter.Q.value = 3.5;
+    const gritHP = audioCtx.createBiquadFilter();
+    gritHP.type = 'highpass';
+    gritHP.frequency.value = 2500;
+    gritGain = audioCtx.createGain();
+    gritGain.gain.value = 0;
+    gritSrc.connect(gritHP); gritHP.connect(gritFilter); gritFilter.connect(gritGain); gritGain.connect(audioCtx.destination);
+
+    /* Piercing tonal squeal */
+    screechTone = audioCtx.createOscillator();
+    screechTone.type = 'sawtooth';
+    screechTone.frequency.value = 3800;
+    const toneFilter = audioCtx.createBiquadFilter();
+    toneFilter.type = 'bandpass';
+    toneFilter.frequency.value = 4000;
+    toneFilter.Q.value = 18;
+    screechToneGain = audioCtx.createGain();
+    screechToneGain.gain.value = 0;
+    screechTone.connect(toneFilter); toneFilter.connect(screechToneGain); screechToneGain.connect(audioCtx.destination);
+    screechTone.start();
+
+    screechTone2 = audioCtx.createOscillator();
+    screechTone2.type = 'triangle';
+    screechTone2.frequency.value = 5600;
+    const toneFilter2 = audioCtx.createBiquadFilter();
+    toneFilter2.type = 'bandpass';
+    toneFilter2.frequency.value = 5800;
+    toneFilter2.Q.value = 20;
+    screechTone2Gain = audioCtx.createGain();
+    screechTone2Gain.gain.value = 0;
+    screechTone2.connect(toneFilter2); toneFilter2.connect(screechTone2Gain); screechTone2Gain.connect(audioCtx.destination);
+    screechTone2.start();
+
+    /* Short chirp when traction snaps */
+    barkFilter = audioCtx.createBiquadFilter();
+    barkFilter.type = 'bandpass';
+    barkFilter.frequency.value = 5000;
+    barkFilter.Q.value = 12;
+    barkGain = audioCtx.createGain();
+    barkGain.gain.value = 0;
+    skidSrc.connect(barkFilter); barkFilter.connect(barkGain); barkGain.connect(audioCtx.destination);
+
+    screechLfo = audioCtx.createOscillator();
+    screechLfo.type = 'sine';
+    screechLfo.frequency.value = 22;
+    screechLfoGain = audioCtx.createGain();
+    screechLfoGain.gain.value = 180;
+    screechLfo.connect(screechLfoGain);
+    screechLfoGain.connect(screechFilter.frequency);
+    screechLfo.start();
+
+    skidSrc.start();
+    gritSrc.start();
+    prevSlideAudio = 0;
+  }catch(e){ /* audio unavailable */ }
+}
+
+function playWallImpact(impactSpeed){
+  if(!audioCtx || muted) return;
+  const now = audioCtx.currentTime;
+  if(now - lastImpactAt < 0.12) return;
+  lastImpactAt = now;
+  const intensity = clamp(impactSpeed/14, 0.08, 1);
+
+  /* Dull heavy body thud */
+  const thud = audioCtx.createOscillator();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(70 + intensity*25, now);
+  thud.frequency.exponentialRampToValueAtTime(28, now + 0.14);
+  const thudGain = audioCtx.createGain();
+  thudGain.gain.setValueAtTime(0.0001, now);
+  thudGain.gain.exponentialRampToValueAtTime(0.55*intensity, now + 0.012);
+  thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+  const thudLp = audioCtx.createBiquadFilter();
+  thudLp.type = 'lowpass';
+  thudLp.frequency.value = 220;
+  thud.connect(thudLp); thudLp.connect(thudGain); thudGain.connect(audioCtx.destination);
+  thud.start(now); thud.stop(now + 0.22);
+
+  /* Soft plastic bumper knock */
+  const knock = audioCtx.createOscillator();
+  knock.type = 'triangle';
+  knock.frequency.setValueAtTime(180 + intensity*40, now);
+  knock.frequency.exponentialRampToValueAtTime(70, now + 0.08);
+  const knockGain = audioCtx.createGain();
+  knockGain.gain.setValueAtTime(0.0001, now);
+  knockGain.gain.exponentialRampToValueAtTime(0.18*intensity, now + 0.008);
+  knockGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+  knock.connect(knockGain); knockGain.connect(audioCtx.destination);
+  knock.start(now); knock.stop(now + 0.12);
+
+  if(impactNoiseBuf){
+    const burst = audioCtx.createBufferSource();
+    burst.buffer = impactNoiseBuf;
+    const burstFilter = audioCtx.createBiquadFilter();
+    burstFilter.type = 'lowpass';
+    burstFilter.frequency.value = 350 + intensity*200;
+    const burstGain = audioCtx.createGain();
+    burstGain.gain.setValueAtTime(0.0001, now);
+    burstGain.gain.exponentialRampToValueAtTime(0.22*intensity, now + 0.005);
+    burstGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    burst.connect(burstFilter); burstFilter.connect(burstGain); burstGain.connect(audioCtx.destination);
+    burst.start(now); burst.stop(now + 0.13);
+  }
+}
+
+function updateAudio(input){
+  if(!audioCtx || muted) return;
+  const t = audioCtx.currentTime;
+  const speed = Math.abs(state.uLocal||0);
+  const speedKmh = speed * 3.6;
+  const throttle = input.throttle||0;
+  const slide = state.slide||0;
+
+  const moving = speed > 0.15 || throttle > 0;
+  const motorSpin = clamp(speed/18, 0, 1);
+  const accelLoad = throttle * (0.35 + 0.65*(1 - motorSpin*0.5));
+
+  if(!moving){
+    motorMaster.gain.setTargetAtTime(0, t, 0.08);
+    humGain.gain.setTargetAtTime(0, t, 0.08);
+    whirrGain.gain.setTargetAtTime(0, t, 0.08);
+  } else {
+    motorMaster.gain.setTargetAtTime(0.9, t, 0.05);
+
+    const humAmt = (0.018 + throttle*0.012) * (1 - clamp(speedKmh/70, 0, 0.72));
+    humOsc.frequency.setTargetAtTime(48 + speed*5 + throttle*14, t, 0.06);
+    humGain.gain.setTargetAtTime(humAmt, t, 0.08);
+
+    const whirrHz = 180 + speed*55 + throttle*220 + motorSpin*320;
+    whirrOsc.frequency.setTargetAtTime(whirrHz, t, 0.04);
+    whirrOsc2.frequency.setTargetAtTime(whirrHz*2.02, t, 0.04);
+    whirrFilter.frequency.setTargetAtTime(700 + whirrHz*0.85, t, 0.05);
+    const whirrAmt = (0.015 + accelLoad*0.09 + motorSpin*0.025) * (1 - clamp((speedKmh-35)/50, 0, 0.75));
+    whirrGain.gain.setTargetAtTime(whirrAmt, t, 0.05);
+  }
+
+  const roadAmt = clamp((speedKmh-4)/55, 0, 1);
+  roadFilter.frequency.setTargetAtTime(220 + speedKmh*8, t, 0.08);
+  roadGain.gain.setTargetAtTime(roadAmt * (0.018 + speedKmh*0.00055), t, 0.1);
+
+  /* Screech only on hard slide past grip — not ordinary high-speed cornering */
+  const skidAmt = clamp((slide - 0.12) * 2.0, 0, 1);
+  const speedGate = clamp((speedKmh-20)/28, 0, 1);
+
+  const skidVol = skidAmt * speedGate * 0.42;
+  screechGain.gain.setTargetAtTime(skidVol, t, 0.03);
+  screechFilter.frequency.setTargetAtTime(4200 + skidAmt*2400 + speed*40, t, 0.04);
+  screechFilter2.frequency.setTargetAtTime(6800 + skidAmt*2200 + speed*50, t, 0.04);
+  screechFilter.Q.setTargetAtTime(12 + skidAmt*6, t, 0.06);
+  screechFilter2.Q.setTargetAtTime(14 + skidAmt*6, t, 0.06);
+
+  const gritVol = skidAmt * speedGate * 0.12;
+  gritGain.gain.setTargetAtTime(gritVol, t, 0.03);
+  gritFilter.frequency.setTargetAtTime(3200 + skidAmt*1800, t, 0.05);
+
+  const toneVol = skidAmt * speedGate * 0.09;
+  screechToneGain.gain.setTargetAtTime(toneVol, t, 0.025);
+  screechTone.frequency.setTargetAtTime(3600 + skidAmt*1800 + speed*30, t, 0.03);
+  screechTone2Gain.gain.setTargetAtTime(toneVol * 0.5, t, 0.025);
+  screechTone2.frequency.setTargetAtTime(5200 + skidAmt*2000 + speed*40, t, 0.03);
+
+  if(screechLfo){
+    screechLfo.frequency.setTargetAtTime(18 + skidAmt*16, t, 0.08);
+    screechLfoGain.gain.setTargetAtTime(140 + skidAmt*200, t, 0.08);
+  }
+
+  const slideDelta = slide - prevSlideAudio;
+  prevSlideAudio = slide;
+  const chirpTrig = skidAmt > 0.25 && speedGate > 0.35 && slideDelta > 0.06;
+  if(chirpTrig && barkGain){
+    const bark = clamp(slideDelta*12 + skidAmt*0.25, 0.12, 0.55) * speedGate;
+    barkFilter.frequency.setValueAtTime(4500 + skidAmt*2000, t);
+    barkGain.gain.cancelScheduledValues(t);
+    barkGain.gain.setValueAtTime(Math.max(barkGain.gain.value, bark), t);
+    barkGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+  } else if(barkGain && barkGain.gain.value < 0.02){
+    barkGain.gain.setTargetAtTime(0, t, 0.04);
+  }
+}
+
+document.getElementById('muteBtn').addEventListener('click', ()=>{
+  muted=!muted;
+  document.getElementById('muteBtn').textContent = muted? '🔇':'🔊';
+  if(!audioCtx) return;
+  if(muted){
+    const t = audioCtx.currentTime;
+    if(motorMaster) motorMaster.gain.setTargetAtTime(0, t, 0.02);
+    if(humGain) humGain.gain.setTargetAtTime(0, t, 0.02);
+    if(whirrGain) whirrGain.gain.setTargetAtTime(0, t, 0.02);
+    if(roadGain) roadGain.gain.setTargetAtTime(0, t, 0.02);
+    if(screechGain) screechGain.gain.setTargetAtTime(0, t, 0.02);
+    if(screechToneGain) screechToneGain.gain.setTargetAtTime(0, t, 0.02);
+    if(screechTone2Gain) screechTone2Gain.gain.setTargetAtTime(0, t, 0.02);
+    if(gritGain) gritGain.gain.setTargetAtTime(0, t, 0.02);
+    if(barkGain) barkGain.gain.setTargetAtTime(0, t, 0.02);
+  }
+});
+
+/* ============================== HUD ============================== */
+const elLapCount=document.getElementById('lapCount');
+const elCurTime=document.getElementById('curTime');
+const elLastTime=document.getElementById('lastTime');
+const elBestTime=document.getElementById('bestTime');
+const elSpeedVal=document.getElementById('speedval');
+const elRpmFill=document.getElementById('rpmfill');
+
+function fmtTime(ms){
+  if(ms==null) return '--:--.---';
+  const m = Math.floor(ms/60000);
+  const s = Math.floor((ms%60000)/1000);
+  const mm = Math.floor(ms%1000);
+  return m+':'+String(s).padStart(2,'0')+'.'+String(mm).padStart(3,'0');
+}
+
+function updateHUD(nowMs, input){
+  elLapCount.textContent = state.lapCount;
+  elCurTime.textContent = fmtTime(nowMs-state.lapStartTime);
+  elLastTime.textContent = fmtTime(state.lastLapTime);
+  elBestTime.textContent = fmtTime(state.bestLapTime);
+  elSpeedVal.textContent = Math.round(state.speed*3.6);
+  const rpm = clamp(1200 + input.throttle*1800 + Math.abs(state.uLocal||0)*140, 900, 7600);
+  elRpmFill.style.width = clamp((rpm-900)/(7600-900)*100,0,100)+'%';
+}
+
+/* ============================== main loop ============================== */
+const FIXED_DT = 1/120;
+let acc = 0;
+let lastT = null;
+let running = false;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!running) return;
+  if(lastT===null) lastT = now;
+  let dt = (now-lastT)/1000;
+  lastT = now;
+  dt = Math.min(dt, 0.05);
+  acc += dt;
+
+  const input = getInput();
+  let steps=0;
+  while(acc>=FIXED_DT && steps<8){
+    stepPhysics(FIXED_DT, input);
+    acc -= FIXED_DT;
+    steps++;
+  }
+  const idx = updateTrackIndexAndCollide();
+  checkLap(idx, now);
+
+  state.currentLapPath.push({x:state.x, z:state.z});
+  if(state.currentLapPath.length>4000) state.currentLapPath.shift();
+
+  kart.group.position.set(state.x, 0, state.z);
+  kart.group.rotation.y = state.yaw;
+
+  const rollF = (state.uLocal||0)/kart.rF;
+  const rollR = (state.uLocal||0)/kart.rR;
+  kart.wheelFL.rotation.x += rollF*dt;
+  kart.wheelFR.rotation.x += rollF*dt;
+  kart.wheelRL.rotation.x += rollR*dt;
+  kart.wheelRR.rotation.x += rollR*dt;
+  kart.steerFL.rotation.y = state.steerAngle;
+  kart.steerFR.rotation.y = state.steerAngle;
+
+  if(state.bestLapPath && state.bestLapPath.length>2){
+    const elapsedFrac = (now-state.lapStartTime)/1 ;
+    const total = state.bestLapPath.length;
+    const lapElapsedMs = now - state.lapStartTime;
+    const bestLapDurationMs = state.bestLapTime||1;
+    const frac = clamp(lapElapsedMs/bestLapDurationMs, 0, 1);
+    let gi = Math.floor(frac*(total-1));
+    gi = clamp(gi,0,total-2);
+    const a = state.bestLapPath[gi], b=state.bestLapPath[gi+1];
+    const localT = frac*(total-1)-gi;
+    const gx = lerp(a.x,b.x,localT), gz = lerp(a.z,b.z,localT);
+    const dx=b.x-a.x, dz=b.z-a.z;
+    const gyaw = Math.atan2(dx,dz);
+    ghostKart.group.visible = frac<1;
+    ghostKart.group.position.set(gx,0,gz);
+    ghostKart.group.rotation.y = gyaw;
+  }
+
+  updateCamera(dt);
+  updateHUD(now, input);
+  updateAudio(input);
+  drawMinimap();
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+
+/* ============================== start screen ============================== */
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  document.getElementById('startScreen').style.display='none';
+  initAudio();
+  running = true;
+  lastT = null;
+  canvas.focus();
+});
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ lastT=null; }
+});
+
+})();
+</script>
+</body>
+</html>
