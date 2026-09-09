@@ -21,16 +21,16 @@
   h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-0.01em;}
   .sub{font-size:11px;color:var(--dim);line-height:1.45;margin:0;}
   label{display:block;font-size:11px;color:var(--dim);margin-bottom:4px;}
-  input[type=text]{
+  input[type=text], select{
     width:100%;background:#121417;border:1px solid var(--border);color:var(--text);
     border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;
   }
   .row{display:flex;gap:8px;flex-wrap:wrap;}
-  button,.fileBtn{
+  button{
     background:#1a1d22;border:1px solid var(--border);color:var(--text);
     border-radius:3px;padding:8px 12px;font-family:var(--mono);font-size:12px;cursor:pointer;
   }
-  button:hover,.fileBtn:hover{border-color:rgba(255,176,32,0.45);}
+  button:hover{border-color:rgba(255,176,32,0.45);}
   button.primary{background:var(--amber);color:#1a1200;border:none;font-weight:700;}
   button.danger{color:#ff8a8a;}
   button:disabled{opacity:0.4;cursor:default;}
@@ -38,6 +38,7 @@
   kbd{background:#222;border:1px solid var(--border);border-radius:2px;padding:1px 4px;font-size:10px;}
   #status{font-size:11px;color:var(--green);min-height:1.2em;}
   #status.err{color:var(--red);}
+  #status.dim{color:var(--dim);}
   main{position:relative;overflow:hidden;}
   #canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;}
   .help{
@@ -53,7 +54,11 @@
   <aside>
     <div>
       <h1>Track Editor</h1>
-      <p class="sub">Click to place simple corner anchors. Corners are auto-filleted for the race mesh.</p>
+      <p class="sub">Click corner anchors. Changes save automatically and show up in the simulator menu.</p>
+    </div>
+    <div>
+      <label for="trackSelect">Circuit</label>
+      <select id="trackSelect"></select>
     </div>
     <div>
       <label for="trackId">Track id</label>
@@ -64,56 +69,52 @@
       <input id="trackName" type="text" value="Custom Circuit" spellcheck="false">
     </div>
     <div class="row">
+      <button type="button" id="btnNew">New</button>
       <button type="button" id="btnUndo" title="Remove last point">Undo</button>
-      <button type="button" id="btnFit" title="Fit path in view">Fit</button>
-      <button type="button" id="btnClear" class="danger">Clear</button>
+      <button type="button" id="btnFit">Fit</button>
     </div>
     <div class="row">
-      <button type="button" id="btnSave" class="primary">Save JSON</button>
-      <button type="button" id="btnSaveFolder">Save to folder…</button>
+      <button type="button" id="btnClear" class="danger">Clear points</button>
+      <button type="button" id="btnDelete" class="danger">Delete track</button>
     </div>
-    <div class="row">
-      <label class="fileBtn">Load JSON<input type="file" id="fileLoad" accept="application/json,.json" hidden></label>
-    </div>
-    <p class="hint">
-      Downloads <code>{id}.json</code> + updated <code>manifest.json</code>.
-      Put both in <code>tracks/</code>, or use Save to folder on Chromium.
-    </p>
-    <div id="status"></div>
-    <a class="back" href="gokart_simulator.html">← back to simulator</a>
+    <p class="hint">Autosaves to this browser. Open the simulator start screen to pick a circuit.</p>
+    <div id="status" class="dim">Loading…</div>
+    <a class="back" id="backLink" href="gokart_simulator.html">← back to simulator</a>
   </aside>
   <main>
     <canvas id="canvas"></canvas>
     <div class="help">
-      <kbd>Click</kbd> add point · <kbd>Drag</kbd> move · <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove ·
-      <kbd>Scroll</kbd> zoom · <kbd>Middle-drag</kbd> / <kbd>Space</kbd>+drag pan
+      <kbd>Click</kbd> add · <kbd>Drag</kbd> move · <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove ·
+      <kbd>Scroll</kbd> zoom · <kbd>Space</kbd>+drag pan
     </div>
   </main>
 </div>
 
 <script src="track_lib.js"></script>
+<script src="tracks_store.js"></script>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const HALF_W = TrackLib.DEFAULTS.halfW;
 const CURB_W = TrackLib.DEFAULTS.curbW;
-const WALL_GAP = TrackLib.DEFAULTS.wallGap;
-const WALL_OFF = HALF_W + CURB_W + WALL_GAP;
 
-let points = []; /* {x,z} */
+let points = [];
 let selected = -1;
-let drag = null; /* {kind:'point'|'pan', idx, lastX, lastY} */
+let drag = null;
 let view = { ox: -40, oy: -40, scale: 4 };
 let viewFitted = true;
+let suppressSave = false;
+let saveTimer = null;
+let currentId = null;
 const ZOOM_MIN = 0.4, ZOOM_MAX = 40;
 
 const params = new URLSearchParams(location.search);
 const loadId = params.get('track') || '';
 
-function setStatus(msg, err){
+function setStatus(msg, kind){
   const el = document.getElementById('status');
   el.textContent = msg || '';
-  el.className = err ? 'err' : '';
+  el.className = kind === 'err' ? 'err' : (kind === 'dim' ? 'dim' : '');
 }
 
 function w2s(x, z){ return { x: (x - view.ox) * view.scale, y: (z - view.oy) * view.scale }; }
@@ -121,6 +122,8 @@ function s2w(sx, sy){ return { x: sx / view.scale + view.ox, z: sy / view.scale 
 function snap(v){ return Math.round(v); }
 
 function fitView(){
+  const cw = canvas.clientWidth || canvas.parentElement.clientWidth || 800;
+  const ch = canvas.clientHeight || canvas.parentElement.clientHeight || 600;
   if(points.length < 1){
     view = { ox: -40, oy: -40, scale: 4 };
     viewFitted = true;
@@ -134,10 +137,10 @@ function fitView(){
   const pad = 20;
   const w = Math.max(20, maxX - minX + pad * 2);
   const h = Math.max(20, maxZ - minZ + pad * 2);
-  const sx = canvas.width / w, sy = canvas.height / h;
-  view.scale = Math.min(sx, sy) * 0.92;
-  view.ox = (minX + maxX) / 2 - (canvas.width / view.scale) / 2;
-  view.oy = (minZ + maxZ) / 2 - (canvas.height / view.scale) / 2;
+  const sx = cw / w, sy = ch / h;
+  view.scale = Math.max(0.2, Math.min(sx, sy) * 0.92);
+  view.ox = (minX + maxX) / 2 - (cw / view.scale) / 2;
+  view.oy = (minZ + maxZ) / 2 - (ch / view.scale) / 2;
   viewFitted = true;
 }
 
@@ -186,7 +189,6 @@ function drawGrid(){
     ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
   }
   ctx.stroke();
-  /* axes */
   const o = w2s(0, 0);
   ctx.strokeStyle = 'rgba(255,176,32,0.25)';
   ctx.beginPath();
@@ -211,7 +213,6 @@ function drawPreview(){
   const roadW = Math.max(4, HALF_W * 2 * view.scale);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-
   ctx.beginPath();
   for(let i=0;i<=path.N;i++){
     const p = path.center[i % path.N];
@@ -220,13 +221,12 @@ function drawPreview(){
   }
   ctx.closePath();
   ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-  ctx.lineWidth = roadW + Math.max(2, (CURB_W + WALL_GAP) * 2 * view.scale);
+  ctx.lineWidth = roadW + Math.max(2, CURB_W * 2 * view.scale);
   ctx.stroke();
   ctx.strokeStyle = 'rgba(40,42,48,0.95)';
   ctx.lineWidth = roadW;
   ctx.stroke();
 
-  /* polyline between anchors (thin) */
   ctx.beginPath();
   points.forEach((p,i)=>{ const m=w2s(p.x,p.z); if(i===0) ctx.moveTo(m.x,m.y); else ctx.lineTo(m.x,m.y); });
   if(points.length >= 3){
@@ -251,7 +251,7 @@ function drawAnchors(){
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.font = '10px monospace';
     ctx.fillText(String(i), m.x + 8, m.y - 8);
   });
 }
@@ -262,98 +262,119 @@ function draw(){
   drawAnchors();
 }
 
-function buildTrackObject(){
-  const id = (document.getElementById('trackId').value || 'custom-circuit').trim().replace(/[^a-zA-Z0-9_-]/g,'-') || 'custom-circuit';
-  const name = (document.getElementById('trackName').value || id).trim();
-  return {
-    id,
-    name,
-    wayPoints: points.map(p => [p.x, p.z])
-  };
+function refreshSelect(){
+  const sel = document.getElementById('trackSelect');
+  const tracks = TracksStore.list();
+  const keep = currentId;
+  sel.innerHTML = '';
+  tracks.forEach(t=>{
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.id;
+    sel.appendChild(opt);
+  });
+  if(keep && tracks.some(t=>t.id===keep)) sel.value = keep;
+  else if(tracks.length) sel.value = tracks[0].id;
 }
 
-function downloadBlob(filename, text){
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], {type:'application/json'}));
-  a.download = filename;
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
-}
-
-function mergeManifest(list, track){
-  const file = track.id + '.json';
-  const next = Array.isArray(list) ? list.slice() : [];
-  const idx = next.findIndex(t => t.id === track.id);
-  const entry = { id: track.id, name: track.name, file };
-  if(idx >= 0) next[idx] = entry; else next.push(entry);
-  return next;
-}
-
-document.getElementById('btnSave').addEventListener('click', async ()=>{
-  if(points.length < 3){ setStatus('Need at least 3 points', true); return; }
-  const track = buildTrackObject();
-  let manifest = [{id:'indoor', name:'Indoor Circuit', file:'indoor.json'}];
+function saveCurrentQuiet(){
+  if(!currentId || points.length < 3) return;
   try{
-    const r = await fetch('tracks/manifest.json', {cache:'no-store'});
-    if(r.ok) manifest = await r.json();
+    TracksStore.upsert({
+      id: currentId,
+      name: (document.getElementById('trackName').value || currentId).trim(),
+      wayPoints: points.map(p => [p.x, p.z])
+    });
   }catch(_){}
-  manifest = mergeManifest(manifest, track);
-  downloadBlob(track.id + '.json', JSON.stringify(track, null, 2) + '\n');
-  downloadBlob('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-  setStatus('Downloaded ' + track.id + '.json + manifest.json');
-});
+}
 
-document.getElementById('btnSaveFolder').addEventListener('click', async ()=>{
-  if(points.length < 3){ setStatus('Need at least 3 points', true); return; }
-  if(!window.showDirectoryPicker){
-    setStatus('Folder save needs Chromium (or use Save JSON)', true);
-    return;
-  }
+function loadTrack(id){
+  suppressSave = true;
+  clearTimeout(saveTimer);
+  const t = TracksStore.get(id) || TracksStore.list()[0];
+  if(!t){ suppressSave = false; return; }
+  currentId = t.id;
+  TracksStore.setSelectedId(t.id);
+  document.getElementById('trackId').value = t.id;
+  document.getElementById('trackName').value = t.name || t.id;
+  document.getElementById('trackSelect').value = t.id;
+  points = (t.wayPoints || []).map(p => ({ x: +p[0], z: +p[1] }));
+  selected = -1;
+  viewFitted = true;
+  fitView();
+  draw();
+  document.getElementById('backLink').href = 'gokart_simulator.html?track=' + encodeURIComponent(t.id);
   try{
-    const dir = await showDirectoryPicker({ mode: 'readwrite' });
-    const track = buildTrackObject();
-    let manifest = [];
-    try{
-      const mh = await dir.getFileHandle('manifest.json');
-      const file = await mh.getFile();
-      manifest = JSON.parse(await file.text());
-    }catch(_){
-      manifest = [{id:'indoor', name:'Indoor Circuit', file:'indoor.json'}];
+    const u = new URL(location.href);
+    u.searchParams.set('track', t.id);
+    history.replaceState(null, '', u.pathname + u.search);
+  }catch(_){}
+  setStatus('Editing “' + (t.name || t.id) + '” · autosave on', 'dim');
+  suppressSave = false;
+}
+
+function scheduleSave(){
+  if(suppressSave) return;
+  clearTimeout(saveTimer);
+  setStatus('Saving…', 'dim');
+  saveTimer = setTimeout(doSave, 280);
+}
+
+function doSave(){
+  if(suppressSave) return;
+  try{
+    const idInput = TracksStore.sanitizeId(document.getElementById('trackId').value);
+    const name = (document.getElementById('trackName').value || idInput).trim();
+    if(points.length < 3){
+      setStatus('Need ≥3 points to save', 'err');
+      return;
     }
-    manifest = mergeManifest(manifest, track);
-    async function write(name, text){
-      const fh = await dir.getFileHandle(name, { create: true });
-      const w = await fh.createWritable();
-      await w.write(text);
-      await w.close();
+    /* If id renamed, remove old id once saved under new */
+    const prevId = currentId;
+    const saved = TracksStore.upsert({
+      id: idInput,
+      name,
+      wayPoints: points.map(p => [p.x, p.z])
+    });
+    /* Id change = rename: drop the previous entry (never delete indoor). */
+    if(prevId && prevId !== saved.id && prevId !== 'indoor'){
+      TracksStore.remove(prevId);
     }
-    await write(track.id + '.json', JSON.stringify(track, null, 2) + '\n');
-    await write('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
-    setStatus('Saved to folder: ' + track.id + '.json');
+    currentId = saved.id;
+    TracksStore.setSelectedId(saved.id);
+    refreshSelect();
+    document.getElementById('trackSelect').value = saved.id;
+    document.getElementById('trackId').value = saved.id;
+    document.getElementById('backLink').href = 'gokart_simulator.html?track=' + encodeURIComponent(saved.id);
+    const t = new Date(saved.updatedAt);
+    setStatus('Saved · ' + t.toLocaleTimeString());
   }catch(e){
-    if(e && e.name === 'AbortError') return;
-    setStatus('Folder save failed: ' + (e && e.message), true);
+    setStatus(e.message || 'Save failed', 'err');
   }
+}
+
+document.getElementById('trackSelect').addEventListener('change', e=>{
+  const nextId = e.target.value;
+  if(nextId === currentId) return;
+  saveCurrentQuiet();
+  loadTrack(nextId);
 });
 
-document.getElementById('fileLoad').addEventListener('change', async e=>{
-  const f = e.target.files && e.target.files[0];
-  if(!f) return;
-  try{
-    const data = JSON.parse(await f.text());
-    const wps = TrackLib.normalizeWayPoints(data);
-    if(wps.length < 3) throw new Error('need ≥3 wayPoints');
-    points = wps.map(p => ({ x: p[0], z: p[1] }));
-    if(data.id) document.getElementById('trackId').value = data.id;
-    if(data.name) document.getElementById('trackName').value = data.name;
-    selected = -1;
-    fitView();
-    draw();
-    setStatus('Loaded ' + (data.id || f.name));
-  }catch(err){
-    setStatus('Load failed: ' + err.message, true);
-  }
-  e.target.value = '';
+document.getElementById('trackId').addEventListener('change', ()=> scheduleSave());
+document.getElementById('trackId').addEventListener('blur', ()=> scheduleSave());
+document.getElementById('trackName').addEventListener('input', ()=> scheduleSave());
+
+document.getElementById('btnNew').addEventListener('click', ()=>{
+  if(points.length >= 3) doSave();
+  const id = TracksStore.uniqueId('custom-circuit');
+  TracksStore.upsert({
+    id,
+    name: 'Custom Circuit',
+    wayPoints: [[0,0],[40,0],[40,30],[0,30]]
+  });
+  refreshSelect();
+  loadTrack(id);
+  setStatus('Created “' + id + '”');
 });
 
 document.getElementById('btnUndo').addEventListener('click', ()=>{
@@ -361,22 +382,34 @@ document.getElementById('btnUndo').addEventListener('click', ()=>{
   points.pop();
   selected = Math.min(selected, points.length - 1);
   draw();
+  scheduleSave();
 });
 document.getElementById('btnClear').addEventListener('click', ()=>{
   points = []; selected = -1; draw();
+  setStatus('Cleared — add ≥3 points to save', 'dim');
 });
 document.getElementById('btnFit').addEventListener('click', ()=>{ fitView(); draw(); });
+document.getElementById('btnDelete').addEventListener('click', ()=>{
+  if(!currentId) return;
+  if(!confirm('Delete track “' + currentId + '” from this browser?')) return;
+  TracksStore.remove(currentId);
+  refreshSelect();
+  const next = TracksStore.list()[0];
+  loadTrack(next.id);
+  setStatus('Deleted');
+});
 
 canvas.addEventListener('contextmenu', e=> e.preventDefault());
 
 let spaceDown = false;
 window.addEventListener('keydown', e=>{
-  if(e.code === 'Space'){ spaceDown = true; e.preventDefault(); }
+  if(e.code === 'Space'){ spaceDown = true; if(e.target===document.body || e.target===canvas) e.preventDefault(); }
   if((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0){
-    if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
     points.splice(selected, 1);
     selected = Math.min(selected, points.length - 1);
     draw();
+    scheduleSave();
   }
 });
 window.addEventListener('keyup', e=>{ if(e.code === 'Space') spaceDown = false; });
@@ -394,6 +427,7 @@ canvas.addEventListener('pointerdown', e=>{
       points.splice(i, 1);
       selected = -1;
       draw();
+      scheduleSave();
     }
     return;
   }
@@ -408,7 +442,7 @@ canvas.addEventListener('pointerdown', e=>{
   const w = s2w(p.x, p.y);
   points.push({ x: snap(w.x), z: snap(w.z) });
   selected = points.length - 1;
-  drag = { kind: 'point', idx: selected };
+  drag = { kind: 'point', idx: selected, moved: false };
   viewFitted = false;
   draw();
 });
@@ -429,18 +463,21 @@ canvas.addEventListener('pointermove', e=>{
     const w = s2w(p.x, p.y);
     points[drag.idx].x = snap(w.x);
     points[drag.idx].z = snap(w.z);
+    drag.moved = true;
     draw();
   }
 });
 
-canvas.addEventListener('pointerup', ()=>{ drag = null; });
+canvas.addEventListener('pointerup', ()=>{
+  if(drag && drag.kind === 'point') scheduleSave();
+  drag = null;
+});
 canvas.addEventListener('pointercancel', ()=>{ drag = null; });
 
 canvas.addEventListener('wheel', e=>{
   e.preventDefault();
   const p = canvasPos(e);
-  const dy = e.deltaY;
-  const factor = Math.exp(-dy * (e.deltaMode === 1 ? 0.05 : 0.0015));
+  const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015));
   const before = s2w(p.x, p.y);
   view.scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, view.scale * factor));
   const after = s2w(p.x, p.y);
@@ -451,32 +488,14 @@ canvas.addEventListener('wheel', e=>{
 }, { passive: false });
 
 async function boot(){
-  resize();
   window.addEventListener('resize', resize);
-  /* Load indoor or ?track= */
-  try{
-    const man = await (await fetch('tracks/manifest.json', {cache:'no-store'})).json();
-    const id = loadId || 'indoor';
-    const entry = (man || []).find(t => t.id === id) || (man && man[0]);
-    if(entry){
-      const data = await (await fetch('tracks/' + (entry.file || entry.id + '.json'), {cache:'no-store'})).json();
-      const wps = TrackLib.normalizeWayPoints(data);
-      if(wps.length >= 3){
-        points = wps.map(p => ({ x: p[0], z: p[1] }));
-        document.getElementById('trackId').value = data.id || entry.id;
-        document.getElementById('trackName').value = data.name || entry.name || entry.id;
-        fitView();
-        draw();
-        setStatus('Editing ' + (data.name || entry.id));
-        return;
-      }
-    }
-  }catch(_){}
-  points = TrackLib.normalizeWayPoints({
-    wayPoints: [[0,0],[0,20],[20,20],[20,50],[0,50],[0,100],[50,100],[50,20],[60,20],[70,100],[80,100],[70,0]]
-  }).map(p => ({ x: p[0], z: p[1] }));
-  fitView();
-  draw();
+  await TracksStore.ready();
+  refreshSelect();
+  const wanted = loadId || TracksStore.getSelectedId();
+  const id = TracksStore.get(wanted) ? wanted : (TracksStore.list()[0] && TracksStore.list()[0].id);
+  resize();
+  if(id) loadTrack(id);
+  requestAnimationFrame(()=>{ resize(); if(id) loadTrack(id); });
 }
 boot();
 </script>

@@ -33,7 +33,7 @@
   #minimap{display:block;width:200px;height:200px;border-radius:2px;}
 
   #topRightBtns{position:absolute;top:222px;right:14px;display:flex;gap:6px;pointer-events:auto;}
-  #topRightBtns button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:3px;width:40px;height:32px;font-family:var(--mono);font-size:11px;cursor:pointer;}
+  #topRightBtns button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:3px;min-width:40px;height:32px;padding:0 8px;font-family:var(--mono);font-size:11px;cursor:pointer;}
   #topRightBtns button:active{background:rgba(255,176,32,0.25);}
 
   #hint{position:absolute;bottom:14px;right:14px;padding:8px 12px;font-size:11px;color:var(--dim);max-width:220px;text-align:right;}
@@ -47,6 +47,14 @@
   #startBtn{background:var(--amber);color:#1a1200;border:none;border-radius:3px;padding:13px 26px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.02em;}
   #startBtn:active{transform:translateY(1px);}
   #startInner .foot{margin-top:14px;font-size:11px;color:#666;}
+  .trackPick{display:flex;align-items:center;gap:10px;margin:0 0 18px 0;flex-wrap:wrap;}
+  .trackPick label{font-size:12px;color:var(--dim);}
+  .trackPick select{
+    flex:1;min-width:160px;background:#121417;border:1px solid var(--border);color:var(--text);
+    border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;
+  }
+  .trackPick a.editorLink{font-size:11px;color:var(--amber);text-decoration:none;}
+  .trackPick a.editorLink:hover{text-decoration:underline;}
 
   #touchControls{position:fixed;inset:0;z-index:20;pointer-events:none;display:none;}
   .tbtn{position:absolute;pointer-events:auto;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;}
@@ -80,9 +88,10 @@
   <div id="topRightBtns">
     <button id="camBtn">cam</button>
     <button id="resetBtn">reset</button>
+    <button id="menuBtn">menu</button>
   </div>
 
-  <div id="hint">R reset · C camera · WASD / arrows drive</div>
+  <div id="hint">Esc menu · R reset · C camera · WASD / arrows drive</div>
 </div>
 
 <div id="touchControls">
@@ -96,12 +105,18 @@
   <div id="startInner">
     <h1>Indoor Line</h1>
     <p class="sub">A low-poly indoor kart circuit for practicing braking points, apexes and throttle control. Arcade-friendly handling with speed-sensitive steering — focused on learning lines, not managing balance.</p>
+    <div class="trackPick">
+      <label for="trackSelect">Circuit</label>
+      <select id="trackSelect"></select>
+      <a class="editorLink" id="editorLink" href="track_editor.html">edit tracks</a>
+    </div>
     <div class="ctrlgrid">
       <b>W / ↑</b><span>throttle</span>
       <b>S / ↓</b><span>brake &amp; reverse</span>
       <b>A D / ← →</b><span>steer</span>
       <b>C</b><span>cycle camera (chase / cockpit)</span>
       <b>R</b><span>reset onto track</span>
+      <b>Esc</b><span>pause / return to menu</span>
     </div>
     <button id="startBtn">Start engine</button>
     <div class="foot">Runs entirely in-browser. Your best lap is kept as a ghost to race against.</div>
@@ -109,8 +124,9 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="tracks_store.js"></script>
 <script>
-(function(){
+(async function(){
 "use strict";
 
 /* ============================== helpers ============================== */
@@ -148,15 +164,39 @@ const fill = new THREE.DirectionalLight(0x8fb0ff, 0.25);
 fill.position.set(-40,30,-30);
 scene.add(fill);
 
+/* ============================== track selection ============================== */
+await TracksStore.ready();
+const trackSelect = document.getElementById('trackSelect');
+const editorLink = document.getElementById('editorLink');
+TracksStore.list().forEach(t=>{
+  const opt = document.createElement('option');
+  opt.value = t.id;
+  opt.textContent = t.name || t.id;
+  trackSelect.appendChild(opt);
+});
+const activeTrack = TracksStore.getActive();
+TracksStore.setSelectedId(activeTrack.id);
+trackSelect.value = activeTrack.id;
+editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
+if(activeTrack.name) document.title = activeTrack.name + ' — Indoor Line';
+
+trackSelect.addEventListener('change', ()=>{
+  const id = trackSelect.value;
+  TracksStore.setSelectedId(id);
+  const u = new URL(location.href);
+  u.searchParams.set('track', id);
+  location.href = u.pathname + u.search + u.hash;
+});
+
 /* ============================== track definition ============================== */
 /*
  * Waypoints form a closed polyline. Long runs stay perfectly straight; corners with
  * a real turn angle are replaced by circular fillets (hairpins/tight turns stay curved).
  * Edges are sampled as center+normal*offset on that G1 path — no inner-corner X.
  */
-const wayPoints = [
-  [0, 0], [0, 20], [20, 20], [20, 50], [0,50], [0, 100], [50,100], [50,20], [60,20], [70, 100], [80,100], [70, 0]
-];
+const wayPoints = (activeTrack.wayPoints && activeTrack.wayPoints.length >= 3)
+  ? activeTrack.wayPoints
+  : TracksStore.FALLBACK.wayPoints;
 const HALF_W = 4.2;
 const CURB_W = 0.55;
 const WALL_GAP = 0.25;
@@ -503,6 +543,9 @@ scene.add(ceiling);
 /* soft blob shadow under kart (cheap fake shadow) — removed */
 
 /* ============================== kart model ============================== */
+const KART_BUMPER_W = 1.72;
+const KART_BUMPER_L = 2.35;
+
 function createKart(ghost){
   const group = new THREE.Group();
   const matOpts = ghost
@@ -522,7 +565,7 @@ function createKart(ghost){
 
   /* --- continuous closed bumper ring (tires sit inside) --- */
   const bumpH = 0.22, bumpY = 0.20;
-  const outerW = 1.72, outerL = 2.35;
+  const outerW = KART_BUMPER_W, outerL = KART_BUMPER_L;
   const bumpT = 0.14;
 
   const bumpF = new THREE.Mesh(new THREE.BoxGeometry(outerW, bumpH, bumpT), mat(COL_BUMP));
@@ -673,8 +716,9 @@ const P = {
   dragCoeff: 1.5, rollResist: 20,
   steerRateLow: 0.6, steerRateHigh: 0.15, steerSpeedRef: 18,
   steerRate: 6.0,
-  /* Outer closed bumper half-width */
-  kartHalfWidth: 0.88
+  /* Closed black bumper rectangle (matches visual outerW × outerL) */
+  kartHalfWidth: KART_BUMPER_W * 0.5,
+  kartHalfLength: KART_BUMPER_L * 0.5
 };
 
 function maxSteerFor(u){
@@ -790,36 +834,60 @@ function stepPhysics(dt, input){
   state.speed = Math.hypot(state.vx, state.vz);
 }
 
-function updateTrackIndexAndCollide(){
-  let best=Infinity, bestI=state.trackIdx;
-  for(let k=-14;k<=14;k++){
-    const idx=((state.trackIdx+k)%N+N)%N;
-    const dx=state.x-center[idx].x, dz=state.z-center[idx].z;
+function nearestTrackIndex(x, z, hint){
+  const start = ((hint||0)%N+N)%N;
+  let best=Infinity, bestI=start;
+  for(let k=-18;k<=18;k++){
+    const idx=((start+k)%N+N)%N;
+    const dx=x-center[idx].x, dz=z-center[idx].z;
     const d=dx*dx+dz*dz;
     if(d<best){best=d;bestI=idx;}
   }
-  state.trackIdx=bestI;
-  const nrm = normals[bestI];
-  const dx=state.x-center[bestI].x, dz=state.z-center[bestI].z;
-  const offset = dx*nrm.x + dz*nrm.z;
-  /* Collide at the visual barrier (blue/gray wall), not the asphalt/curb edge. */
-  const side = offset >= 0 ? 1 : -1;
-  const wallPt = edgePoint(bestI, side * wallOffset);
-  const wallDist = Math.hypot(wallPt.x - center[bestI].x, wallPt.z - center[bestI].z);
-  const limit = Math.max(0.2, wallDist - P.kartHalfWidth);
-  if(Math.abs(offset) > limit){
-    const vn = state.vx*nrm.x + state.vz*nrm.z;
-    const intoWall = vn * side; /* >0 when moving into this wall */
-    if(intoWall > 0.8) playWallImpact(intoWall);
-    const excess = Math.abs(offset)-limit;
-    state.x -= nrm.x*side*excess;
-    state.z -= nrm.z*side*excess;
-    const newVn = -0.22*vn;
-    state.vx += nrm.x*(newVn-vn);
-    state.vz += nrm.z*(newVn-vn);
+  return bestI;
+}
+
+function updateTrackIndexAndCollide(){
+  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx);
+  const fX=Math.sin(state.yaw), fZ=Math.cos(state.yaw);
+  const rX=Math.cos(state.yaw), rZ=-Math.sin(state.yaw);
+  const hx=P.kartHalfWidth, hz=P.kartHalfLength;
+  const corners = [
+    [hx,hz],[-hx,hz],[hx,-hz],[-hx,-hz],
+    [hx,0],[-hx,0],[0,hz],[0,-hz]
+  ];
+
+  for(let iter=0; iter<4; iter++){
+    let maxPen=0, nx=0, nz=0;
+    for(let c=0;c<corners.length;c++){
+      const px = state.x + rX*corners[c][0] + fX*corners[c][1];
+      const pz = state.z + rZ*corners[c][0] + fZ*corners[c][1];
+      const i = nearestTrackIndex(px, pz, state.trackIdx);
+      const nrm = normals[i];
+      const offset = (px-center[i].x)*nrm.x + (pz-center[i].z)*nrm.z;
+      const side = offset >= 0 ? 1 : -1;
+      const wallPt = edgePoint(i, side * wallOffset);
+      const limit = Math.hypot(wallPt.x-center[i].x, wallPt.z-center[i].z);
+      const pen = Math.abs(offset) - limit;
+      if(pen > maxPen){
+        maxPen = pen;
+        nx = nrm.x * side;
+        nz = nrm.z * side;
+      }
+    }
+    if(maxPen <= 1e-5) break;
+    state.x -= nx * maxPen;
+    state.z -= nz * maxPen;
+    const vn = state.vx*nx + state.vz*nz;
+    if(vn > 0.8) playWallImpact(vn);
+    if(vn > 0){
+      const newVn = -0.22*vn;
+      state.vx += nx*(newVn-vn);
+      state.vz += nz*(newVn-vn);
+    }
     state.vx *= 0.975; state.vz *= 0.975;
   }
-  return bestI;
+  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx);
+  return state.trackIdx;
 }
 
 function checkLap(idx, nowMs){
@@ -843,7 +911,16 @@ function checkLap(idx, nowMs){
 
 /* ============================== input ============================== */
 const keys = {};
+let hasStarted = false;
+let running = false;
 window.addEventListener('keydown', e=>{
+  if(e.code==='Escape'){
+    e.preventDefault();
+    if(running) openMenu();
+    else if(hasStarted) closeMenu();
+    return;
+  }
+  if(!running) return;
   keys[e.code]=true;
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
   if(e.code==='KeyR') resetKart();
@@ -871,6 +948,7 @@ if('ontouchstart' in window || navigator.maxTouchPoints>0){
 }
 
 function getInput(){
+  if(!running) return { steer:0, throttle:0, brake:0 };
   const left = keys['ArrowLeft']||keys['KeyA']||touch.left;
   const right = keys['ArrowRight']||keys['KeyD']||touch.right;
   const gas = keys['ArrowUp']||keys['KeyW']||touch.gas;
@@ -889,6 +967,7 @@ let camModeIdx = 0;
 function cycleCamera(){ camModeIdx = (camModeIdx+1)%camModes.length; }
 document.getElementById('camBtn').addEventListener('click', cycleCamera);
 document.getElementById('resetBtn').addEventListener('click', resetKart);
+document.getElementById('menuBtn').addEventListener('click', openMenu);
 
 const camPos = new THREE.Vector3(0,4,-8);
 const camLook = new THREE.Vector3(0,0,0);
@@ -1345,7 +1424,25 @@ function updateHUD(nowMs, input){
 const FIXED_DT = 1/120;
 let acc = 0;
 let lastT = null;
-let running = false;
+
+function openMenu(){
+  if(!hasStarted) return;
+  running = false;
+  lastT = null;
+  Object.keys(keys).forEach(k=>{ keys[k]=false; });
+  const btn = document.getElementById('startBtn');
+  btn.textContent = 'Resume';
+  document.getElementById('startScreen').style.display = 'flex';
+}
+
+function closeMenu(){
+  document.getElementById('startScreen').style.display = 'none';
+  initAudio();
+  running = true;
+  hasStarted = true;
+  lastT = null;
+  canvas.focus();
+}
 
 function frame(now){
   requestAnimationFrame(frame);
@@ -1409,19 +1506,17 @@ function frame(now){
 requestAnimationFrame(frame);
 
 /* ============================== start screen ============================== */
-document.getElementById('startBtn').addEventListener('click', ()=>{
-  document.getElementById('startScreen').style.display='none';
-  initAudio();
-  running = true;
-  lastT = null;
-  canvas.focus();
-});
+document.getElementById('startBtn').addEventListener('click', closeMenu);
 
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){ lastT=null; }
 });
 
-})();
+})().catch(err=>{
+  console.error(err);
+  const foot = document.querySelector('#startInner .foot');
+  if(foot) foot.textContent = 'Failed to load tracks: ' + (err && err.message ? err.message : err);
+});
 </script>
 </body>
 </html>

@@ -36,7 +36,6 @@
       if (typeof input[0] === "number" || (Array.isArray(input[0]) && input[0].length >= 2)) {
         return input.map(p => [+p[0], +p[1]]);
       }
-      /* array of {x,z} or nodes */
       return input.map(n => [+(n.x != null ? n.x : n[0]), +(n.z != null ? n.z : n[1])]);
     }
     if (Array.isArray(input.wayPoints) && input.wayPoints.length) {
@@ -61,7 +60,6 @@
     const wallOffset = HALF_W + CURB_W + WALL_GAP;
     const SAMPLE_SPACING = opts.sampleSpacing;
     const FILLET_TARGET = opts.filletTarget;
-    const FILLET_MIN = wallOffset + 0.75;
     const STRAIGHT_ANG = opts.straightAng;
 
     const wayPoints = normalizeWayPoints(wayPointsOrTrack);
@@ -88,44 +86,33 @@
       const dot = clamp(d0.x * d1.x + d0.z * d1.z, -1, 1);
       const turn = Math.atan2(cross, dot);
       const absTurn = Math.abs(turn);
-      let radius = 0, inset = 0, active = false;
+      let radius = 0, inset = 0, active = false, filletAng = 0, halfTan = 0;
       if (absTurn > STRAIGHT_ANG) {
         active = true;
-        const halfTan = Math.tan(absTurn * 0.5);
+        filletAng = absTurn;
+        /* tan(θ/2) blows up as θ→180°; clamp so insets stay finite */
+        halfTan = Math.tan(Math.min(filletAng, Math.PI * 0.95) * 0.5);
         radius = FILLET_TARGET;
         inset = radius * halfTan;
       }
-      corner.push({ turn, absTurn, radius, inset, active, d0, d1 });
+      corner.push({ turn, absTurn, filletAng, halfTan, radius, inset, active });
     }
 
+    function syncRadiusFromInset(c) {
+      if (!c.active || c.halfTan < 1e-8) return;
+      c.radius = Math.max(0.35, c.inset / c.halfTan);
+    }
+
+    /* Fit fillets onto segments: share each segment's budget between its two ends */
     for (let i = 0; i < MV; i++) {
       const cA = corner[i];
       const cB = corner[(i + 1) % MV];
-      const budget = segLen[i] * 0.92;
-      let need = (cA.active ? cA.inset : 0) + (cB.active ? cB.inset : 0);
+      const budget = segLen[i] * 0.90;
+      const need = (cA.active ? cA.inset : 0) + (cB.active ? cB.inset : 0);
       if (need > budget && need > 1e-6) {
         const s = budget / need;
-        if (cA.active) { cA.inset *= s; cA.radius = cA.inset / Math.tan(cA.absTurn * 0.5); }
-        if (cB.active) { cB.inset *= s; cB.radius = cB.inset / Math.tan(cB.absTurn * 0.5); }
-      }
-    }
-    for (let i = 0; i < MV; i++) {
-      const c = corner[i];
-      if (!c.active) continue;
-      if (c.radius < FILLET_MIN) {
-        c.radius = FILLET_MIN;
-        c.inset = c.radius * Math.tan(c.absTurn * 0.5);
-      }
-    }
-    for (let i = 0; i < MV; i++) {
-      const cA = corner[i];
-      const cB = corner[(i + 1) % MV];
-      const budget = segLen[i] * 0.92;
-      let need = (cA.active ? cA.inset : 0) + (cB.active ? cB.inset : 0);
-      if (need > budget && need > 1e-6) {
-        const s = budget / need;
-        if (cA.active) { cA.inset *= s; cA.radius = Math.max(0.5, cA.inset / Math.tan(cA.absTurn * 0.5)); }
-        if (cB.active) { cB.inset *= s; cB.radius = Math.max(0.5, cB.inset / Math.tan(cB.absTurn * 0.5)); }
+        if (cA.active) { cA.inset *= s; syncRadiusFromInset(cA); }
+        if (cB.active) { cB.inset *= s; syncRadiusFromInset(cB); }
       }
     }
 
@@ -139,9 +126,8 @@
       const startInset = c0.active ? c0.inset : 0;
       const endInset = c1.active ? c1.inset : 0;
 
-      if (c0.active) {
+      if (c0.active && c0.radius > 0.2 && c0.inset > 1e-4) {
         const dIn = segDir[(i - 1 + MV) % MV];
-        const absTurn = c0.absTurn;
         const R = c0.radius;
         const inset = c0.inset;
         const pStart = { x: v0.x - dIn.x * inset, z: v0.z - dIn.z * inset };
@@ -149,18 +135,9 @@
         const nIn = leftOf(dIn);
         const sign = c0.turn >= 0 ? 1 : -1;
         const cen = { x: pStart.x + nIn.x * R * sign, z: pStart.z + nIn.z * R * sign };
-        let a0 = Math.atan2(pStart.x - cen.x, pStart.z - cen.z);
-        let a1 = Math.atan2(pEnd.x - cen.x, pEnd.z - cen.z);
-        let sweep = a1 - a0;
-        if (sign > 0) {
-          while (sweep < 0) sweep += Math.PI * 2;
-          while (sweep > Math.PI * 2) sweep -= Math.PI * 2;
-          if (Math.abs(sweep - absTurn) > Math.abs((sweep - Math.PI * 2) - absTurn)) sweep -= Math.PI * 2;
-        } else {
-          while (sweep > 0) sweep -= Math.PI * 2;
-          while (sweep < -Math.PI * 2) sweep += Math.PI * 2;
-          if (Math.abs(-sweep - absTurn) > Math.abs((-sweep - Math.PI * 2) - absTurn)) sweep += Math.PI * 2;
-        }
+        const a0 = Math.atan2(pStart.x - cen.x, pStart.z - cen.z);
+        /* Orbit around center is opposite the heading-turn sign (matches simulator). */
+        const sweep = -sign * c0.filletAng;
         pieces.push({ type: "arc", cen, R, a0, sweep, sign, pStart, pEnd });
       }
 
@@ -200,24 +177,15 @@
         pushSample(p.b.x, p.b.z, tx, tz, len / steps);
       } else {
         const steps = Math.max(4, Math.round(Math.abs(p.sweep) * p.R / SAMPLE_SPACING));
-        for (let s = 0; s < steps; s++) {
+        const sdir = Math.sign(p.sweep) || p.sign || 1;
+        for (let s = 0; s <= steps; s++) {
           const t = s / steps;
           const ang = p.a0 + p.sweep * t;
           const x = p.cen.x + p.R * Math.sin(ang);
           const z = p.cen.z + p.R * Math.cos(ang);
-          const tx = Math.cos(ang) * Math.sign(p.sweep || p.sign);
-          const tz = -Math.sin(ang) * Math.sign(p.sweep || p.sign);
-          const tn = vnorm(tx, tz);
-          const arcStep = (s === 0) ? 0 : (Math.abs(p.sweep) * p.R / steps);
-          pushSample(x, z, tn.x, tn.z, arcStep);
+          const tn = vnorm(Math.cos(ang) * sdir, -Math.sin(ang) * sdir);
+          pushSample(x, z, tn.x, tn.z, s === 0 ? 0 : Math.abs(p.sweep) * p.R / steps);
         }
-        const ang = p.a0 + p.sweep;
-        const x = p.cen.x + p.R * Math.sin(ang);
-        const z = p.cen.z + p.R * Math.cos(ang);
-        const tx = Math.cos(ang) * Math.sign(p.sweep || p.sign);
-        const tz = -Math.sin(ang) * Math.sign(p.sweep || p.sign);
-        const tn = vnorm(tx, tz);
-        pushSample(x, z, tn.x, tn.z, Math.abs(p.sweep) * p.R / steps);
       }
     }
 
@@ -243,7 +211,6 @@
     };
   }
 
-  /** Alias used by older call sites. */
   function buildTrack(wayPointsOrTrack, opts) {
     return buildCenterline(wayPointsOrTrack, opts);
   }
