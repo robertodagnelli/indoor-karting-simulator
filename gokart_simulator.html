@@ -212,6 +212,12 @@ const MV = verts.length;
 
 function vnorm(x,z){ const l=Math.hypot(x,z)||1; return {x:x/l, z:z/l}; }
 function leftOf(d){ return {x:-d.z, z:d.x}; }
+function lineIntersect(p, dp, q, dq){
+  const cross = dp.x*dq.z - dp.z*dq.x;
+  if(Math.abs(cross) < 1e-10) return null;
+  const t = ((q.x-p.x)*dq.z - (q.z-p.z)*dq.x) / cross;
+  return {x:p.x + t*dp.x, z:p.z + t*dp.z};
+}
 
 /* Segment lengths and unit dirs (i → i+1) */
 const segLen = [];
@@ -301,7 +307,7 @@ for(let i=0;i<MV;i++){
     const a0 = Math.atan2(pStart.x-cen.x, pStart.z-cen.z);
     /* Orbit direction around center is opposite the road-turn sign (see fillet math). */
     const sweep = -sign * absTurn;
-    pieces.push({type:'arc', cen, R, a0, sweep, pStart, pEnd});
+    pieces.push({type:'arc', cen, R, a0, sweep, sign, pStart, pEnd, dIn, dOut:d});
   }
 
   const straightA = {x:v0.x + d.x*startInset, z:v0.z + d.z*startInset};
@@ -317,38 +323,45 @@ const center = [];
 const tangents = [];
 const normals = [];
 const cum = [];
+const sampleMeta = [];
 let distAcc = 0;
 
-function pushSample(x, z, tx, tz, stepDist){
+function pushSample(x, z, tx, tz, stepDist, meta){
   if(center.length) distAcc += stepDist;
   cum.push(distAcc);
   center.push({x, z});
   tangents.push({x:tx, z:tz});
   normals.push({x:-tz, z:tx});
+  sampleMeta.push(meta || null);
 }
 
-for(let pi=0; pi<pieces.length; pi++){
+const nPieces = pieces.length;
+for(let pi=0; pi<nPieces; pi++){
   const p = pieces[pi];
+  const prev = pieces[(pi-1+nPieces)%nPieces];
+  const next = pieces[(pi+1)%nPieces];
   if(p.type==='line'){
     const dx=p.b.x-p.a.x, dz=p.b.z-p.a.z;
     const len=Math.hypot(dx,dz)||1;
     const steps=Math.max(1, Math.round(len/SAMPLE_SPACING));
     const tx=dx/len, tz=dz/len;
+    const metaBase = {kind:'line', a:p.a, b:p.b, d:p.d, prev, next};
     for(let s=0;s<=steps;s++){
       const t=s/steps;
-      pushSample(p.a.x+dx*t, p.a.z+dz*t, tx, tz, s===0?0:len/steps);
+      pushSample(p.a.x+dx*t, p.a.z+dz*t, tx, tz, s===0?0:len/steps, Object.assign({t}, metaBase));
     }
   } else {
     const steps=Math.max(4, Math.round(Math.abs(p.sweep)*p.R/SAMPLE_SPACING));
     const arcLen = Math.abs(p.sweep)*p.R;
     const sdir = Math.sign(p.sweep) || 1;
+    const meta = {kind:'arc', cen:p.cen, R:p.R, sign:p.sign, pStart:p.pStart, pEnd:p.pEnd, dIn:p.dIn, dOut:p.dOut};
     for(let s=0;s<=steps;s++){
       const t=s/steps;
       const ang=p.a0 + p.sweep*t;
       const x=p.cen.x + p.R*Math.sin(ang);
       const z=p.cen.z + p.R*Math.cos(ang);
       const tn=vnorm(Math.cos(ang)*sdir, -Math.sin(ang)*sdir);
-      pushSample(x, z, tn.x, tn.z, s===0?0:arcLen/steps);
+      pushSample(x, z, tn.x, tn.z, s===0?0:arcLen/steps, meta);
     }
   }
 }
@@ -358,7 +371,7 @@ for(let pi=0; pi<pieces.length; pi++){
   for(let i=center.length-1;i>0;i--){
     const dx=center[i].x-center[i-1].x, dz=center[i].z-center[i-1].z;
     if(dx*dx+dz*dz < 1e-6){
-      center.splice(i,1); tangents.splice(i,1); normals.splice(i,1); cum.splice(i,1);
+      center.splice(i,1); tangents.splice(i,1); normals.splice(i,1); cum.splice(i,1); sampleMeta.splice(i,1);
     }
   }
 })();
@@ -369,22 +382,36 @@ const totalLength = cum[N-1] || distAcc;
 let bboxMinX=Infinity,bboxMaxX=-Infinity,bboxMinZ=Infinity,bboxMaxZ=-Infinity;
 center.forEach(p=>{ bboxMinX=Math.min(bboxMinX,p.x); bboxMaxX=Math.max(bboxMaxX,p.x); bboxMinZ=Math.min(bboxMinZ,p.z); bboxMaxZ=Math.max(bboxMaxZ,p.z); });
 
+function isVJoin(piece, offset){
+  if(!piece) return false;
+  const isArc = piece.type==='arc' || piece.kind==='arc';
+  return isArc && (piece.R - offset * piece.sign) < 0.45;
+}
+
+function vApex(piece, offset){
+  const n0 = leftOf(piece.dIn), n1 = leftOf(piece.dOut);
+  const a = {x:piece.pStart.x + n0.x*offset, z:piece.pStart.z + n0.z*offset};
+  const b = {x:piece.pEnd.x + n1.x*offset, z:piece.pEnd.z + n1.z*offset};
+  return lineIntersect(a, piece.dIn, b, piece.dOut) || {x:piece.cen.x, z:piece.cen.z};
+}
+
 function edgePoint(i, offset){
-  /* Clamp inner offset on tight fillets so wall never crosses the arc center */
-  let o = offset;
-  const i0=(i-1+N)%N, i1=(i+1)%N;
-  const ax=center[i].x-center[i0].x, az=center[i].z-center[i0].z;
-  const bx=center[i1].x-center[i].x, bz=center[i1].z-center[i].z;
-  const al=Math.hypot(ax,az)||1e-6, bl=Math.hypot(bx,bz)||1e-6;
-  const cross=ax*bz-az*bx;
-  const ang=Math.atan2(cross, ax*bx+az*bz);
-  const kappa=ang/((al+bl)*0.5);
-  if(Math.abs(kappa) > 1e-5){
-    const maxIn = Math.max(0.4, Math.abs(1/kappa) - 0.35);
-    if(o < 0 && kappa < 0) o = Math.max(o, -maxIn);
-    if(o > 0 && kappa > 0) o = Math.min(o, maxIn);
+  const s = sampleMeta[i];
+  if(s && s.kind==='arc'){
+    if(isVJoin(s, offset)) return vApex(s, offset);
+    return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset};
   }
-  return {x:center[i].x + normals[i].x*o, z:center[i].z + normals[i].z*o};
+  if(s && s.kind==='line'){
+    const n = leftOf(s.d);
+    let aOff = {x:s.a.x + n.x*offset, z:s.a.z + n.z*offset};
+    let bOff = {x:s.b.x + n.x*offset, z:s.b.z + n.z*offset};
+    /* Clip straight walls at the V so they don't overshoot the inner corner */
+    if(isVJoin(s.prev, offset)) aOff = vApex(s.prev, offset);
+    if(isVJoin(s.next, offset)) bOff = vApex(s.next, offset);
+    const t = s.t;
+    return {x:aOff.x + (bOff.x-aOff.x)*t, z:aOff.z + (bOff.z-aOff.z)*t};
+  }
+  return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset};
 }
 
 /* ---- geometry building helpers ---- */
@@ -403,6 +430,9 @@ function buildFlatRibbon(nearSigned, farSigned, colorFn){
     const j=(i+1)%N;
     const inA=edgePoint(i, nearSigned), outA=edgePoint(i, farSigned);
     const inB=edgePoint(j, nearSigned), outB=edgePoint(j, farSigned);
+    const dx = inB.x-inA.x, dz = inB.z-inA.z;
+    const ex = outB.x-outA.x, ez = outB.z-outA.z;
+    if(dx*dx+dz*dz < 1e-8 && ex*ex+ez*ez < 1e-8) continue;
     const c=colorFn(cum[i]);
     positions.push(inA.x,0.0,inA.z, outA.x,0.0,outA.z, outB.x,0.0,outB.z);
     positions.push(inA.x,0.0,inA.z, outB.x,0.0,outB.z, inB.x,0.0,inB.z);
@@ -416,8 +446,14 @@ function buildWallRibbon(offsetSigned, yBottom, yTop, colorFn){
   const sgn = Math.sign(offsetSigned)||1;
   for(let i=0;i<N;i++){
     const j=(i+1)%N;
-    const nA=normals[i];
     const pA=edgePoint(i, offsetSigned), pB=edgePoint(j, offsetSigned);
+    const dx=pB.x-pA.x, dz=pB.z-pA.z;
+    const seg=Math.hypot(dx,dz);
+    if(seg < 1e-4) continue;
+    /* Drop leftover fins that run against the track (overshoot past a V) */
+    const tA=tangents[i];
+    if(dx*tA.x + dz*tA.z < -0.15 * seg) continue;
+    const nA=normals[i];
     const c=colorFn(cum[i]);
     positions.push(pA.x,yBottom,pA.z, pA.x,yTop,pA.z, pB.x,yTop,pB.z);
     positions.push(pA.x,yBottom,pA.z, pB.x,yTop,pB.z, pB.x,yBottom,pB.z);
