@@ -382,6 +382,19 @@ const totalLength = cum[N-1] || distAcc;
 let bboxMinX=Infinity,bboxMaxX=-Infinity,bboxMinZ=Infinity,bboxMaxZ=-Infinity;
 center.forEach(p=>{ bboxMinX=Math.min(bboxMinX,p.x); bboxMaxX=Math.max(bboxMaxX,p.x); bboxMinZ=Math.min(bboxMinZ,p.z); bboxMaxZ=Math.max(bboxMaxZ,p.z); });
 
+function nearestCenterIndex(x, z){
+  let best=Infinity, bestI=0;
+  for(let i=0;i<N;i++){
+    const dx=x-center[i].x, dz=z-center[i].z;
+    const d=dx*dx+dz*dz;
+    if(d<best){best=d;bestI=i;}
+  }
+  return bestI;
+}
+const wpSampleIdx = verts.map(v=>nearestCenterIndex(v.x, v.z));
+const SPAWN_WP = 0;
+const START_WP = Math.min(1, MV-1);
+
 function isVJoin(piece, offset){
   if(!piece) return false;
   const isArc = piece.type==='arc' || piece.kind==='arc';
@@ -483,9 +496,9 @@ function wallColor(d){ return (Math.floor(d/4)%2===0) ? [0.22,0.22,0.24] : [0.08
 const wallR = buildWallRibbon(wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallR);
 const wallL = buildWallRibbon(-wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallL);
 
-/* start/finish checker */
+/* start/finish checker — waypoint 1 */
 (function(){
-  const startIdx=0;
+  const startIdx = wpSampleIdx[Math.min(1, MV-1)];
   const t0=tangents[startIdx];
   const yaw0 = Math.atan2(t0.x, t0.z);
   const grp = new THREE.Group();
@@ -762,15 +775,28 @@ function maxSteerFor(u){
   return lerp(P.steerRateLow, P.steerRateHigh, t);
 }
 
-const startIdxYaw = Math.atan2(tangents[0].x, tangents[0].z);
+function poseAtWaypoint(wpI, lateral){
+  lateral = (lateral==null) ? -1.2 : lateral;
+  const i = wpSampleIdx[wpI];
+  const n = normals[i], t = tangents[i];
+  return {
+    x: center[i].x + n.x*lateral,
+    z: center[i].z + n.z*lateral,
+    yaw: Math.atan2(t.x, t.z)
+  };
+}
+
+const spawnPose = poseAtWaypoint(SPAWN_WP);
 const state = {
-  x: center[0].x - normals[0].x*1.2, z: center[0].z - normals[0].z*1.2,
-  yaw: startIdxYaw, vx:0, vz:0, r:0, steerAngle:0,
+  x: spawnPose.x, z: spawnPose.z,
+  yaw: spawnPose.yaw, vx:0, vz:0, r:0, steerAngle:0,
   slip:0, slide:0, speed:0,
   trackIdx:0, prevIdx:0,
-  lapStartTime: performance.now(), lapCount:1,
+  lapStartTime:0, lapCount:1, timing:false,
   lastLapTime:null, bestLapTime:null,
-  currentLapPath: [], bestLapPath: null, ghostCursor:0
+  currentLapPath: [], bestLapPath: null,
+  nextCp: START_WP,
+  gateAlong: new Array(MV).fill(0)
 };
 findInitialTrackIndex();
 function findInitialTrackIndex(){
@@ -783,12 +809,33 @@ function findInitialTrackIndex(){
   state.trackIdx=bestI; state.prevIdx=bestI;
 }
 
+function snapshotGates(){
+  for(let i=0;i<MV;i++){
+    const gi = wpSampleIdx[i];
+    const t = tangents[gi], c = center[gi];
+    state.gateAlong[i] = (state.x-c.x)*t.x + (state.z-c.z)*t.z;
+  }
+}
+snapshotGates();
+kart.group.position.set(state.x, 0, state.z);
+kart.group.rotation.y = state.yaw;
+
 function resetKart(){
-  state.x = center[0].x - normals[0].x*1.2;
-  state.z = center[0].z - normals[0].z*1.2;
-  state.yaw = startIdxYaw;
+  const p = poseAtWaypoint(SPAWN_WP);
+  state.x = p.x; state.z = p.z; state.yaw = p.yaw;
   state.vx=0; state.vz=0; state.r=0; state.steerAngle=0;
+  state.slip=0; state.slide=0; state.speed=0;
   findInitialTrackIndex();
+  state.timing = false;
+  state.lapStartTime = 0;
+  state.currentLapPath = [];
+  state.nextCp = START_WP;
+  kart.group.position.set(state.x, 0, state.z);
+  kart.group.rotation.y = state.yaw;
+  kart.steerFL.rotation.y = 0;
+  kart.steerFR.rotation.y = 0;
+  ghostKart.group.visible = false;
+  snapshotGates();
 }
 
 function stepPhysics(dt, input){
@@ -926,23 +973,55 @@ function updateTrackIndexAndCollide(){
   return state.trackIdx;
 }
 
-function checkLap(idx, nowMs){
-  const highZone = N*0.85, lowZone = N*0.15;
-  if(state.prevIdx>highZone && idx<lowZone){
-    const t = nowMs - state.lapStartTime;
-    if(t > 8000){
-      state.lastLapTime = t;
-      if(state.bestLapTime===null || t<state.bestLapTime){
-        state.bestLapTime = t;
-        state.bestLapPath = state.currentLapPath.slice();
-      }
-      state.currentLapPath = [];
-      state.ghostCursor = 0;
-      state.lapStartTime = nowMs;
-      state.lapCount++;
+function crossedGate(wpI, prevAlong){
+  const gi = wpSampleIdx[wpI];
+  const t = tangents[gi], nrm = normals[gi], c = center[gi];
+  const dx = state.x-c.x, dz = state.z-c.z;
+  const along = dx*t.x + dz*t.z;
+  const lat = dx*nrm.x + dz*nrm.z;
+  const onTrack = Math.abs(lat) < (HALF_W + CURB_W + 0.6);
+  const hit = onTrack && prevAlong < 0 && along >= 0;
+  return { along, hit };
+}
+
+function beginLap(nowMs){
+  state.timing = true;
+  state.lapStartTime = nowMs;
+  state.currentLapPath = [{x:state.x, z:state.z}];
+  state.nextCp = (START_WP + 1) % MV;
+}
+
+function completeLap(nowMs){
+  const t = nowMs - state.lapStartTime;
+  if(t > 2500){
+    state.lastLapTime = t;
+    if(state.bestLapTime===null || t<state.bestLapTime){
+      state.bestLapTime = t;
+      state.bestLapPath = state.currentLapPath.slice();
     }
+    state.lapCount++;
   }
-  state.prevIdx = idx;
+  beginLap(nowMs);
+}
+
+function checkLap(nowMs){
+  const prevAlong = state.gateAlong.slice();
+  snapshotGates();
+  for(let n=0; n<MV+1; n++){
+    const wp = state.nextCp;
+    const { hit } = crossedGate(wp, prevAlong[wp]);
+    if(!hit) break;
+    if(!state.timing){
+      if(wp === START_WP) beginLap(nowMs);
+      else break;
+      continue;
+    }
+    if(wp === START_WP){
+      completeLap(nowMs);
+      continue;
+    }
+    state.nextCp = (wp + 1) % MV;
+  }
 }
 
 /* ============================== input ============================== */
@@ -1058,7 +1137,7 @@ const bgCanvas = document.createElement('canvas'); bgCanvas.width=MM; bgCanvas.h
   bctx.strokeStyle='rgba(10,10,10,0.9)';
   bctx.lineWidth = Math.max(1, HALF_W*1.2*mmScale);
   bctx.stroke();
-  const s0=w2m(center[0].x,center[0].z);
+  const s0=w2m(center[wpSampleIdx[START_WP]].x, center[wpSampleIdx[START_WP]].z);
   bctx.fillStyle='#ffb020'; bctx.beginPath(); bctx.arc(s0.x,s0.y,2.5,0,7); bctx.fill();
 })();
 
@@ -1087,7 +1166,7 @@ function drawMinimap(){
   const km = w2m(state.x,state.z);
   mctx.save();
   mctx.translate(km.x,km.y);
-  mctx.rotate(state.yaw);
+  mctx.rotate(Math.PI - state.yaw);
   mctx.fillStyle='#ffffff';
   mctx.beginPath();
   mctx.moveTo(0,-4.5); mctx.lineTo(3,3.5); mctx.lineTo(-3,3.5); mctx.closePath();
@@ -1448,7 +1527,7 @@ function fmtTime(ms){
 
 function updateHUD(nowMs, input){
   elLapCount.textContent = state.lapCount;
-  elCurTime.textContent = fmtTime(nowMs-state.lapStartTime);
+  elCurTime.textContent = fmtTime(state.timing ? (nowMs-state.lapStartTime) : 0);
   elLastTime.textContent = fmtTime(state.lastLapTime);
   elBestTime.textContent = fmtTime(state.bestLapTime);
   elSpeedVal.textContent = Math.round(state.speed*3.6);
@@ -1497,10 +1576,12 @@ function frame(now){
     steps++;
   }
   const idx = updateTrackIndexAndCollide();
-  checkLap(idx, now);
+  checkLap(now);
 
-  state.currentLapPath.push({x:state.x, z:state.z});
-  if(state.currentLapPath.length>4000) state.currentLapPath.shift();
+  if(state.timing){
+    state.currentLapPath.push({x:state.x, z:state.z});
+    if(state.currentLapPath.length>4000) state.currentLapPath.shift();
+  }
 
   kart.group.position.set(state.x, 0, state.z);
   kart.group.rotation.y = state.yaw;
@@ -1514,8 +1595,7 @@ function frame(now){
   kart.steerFL.rotation.y = state.steerAngle;
   kart.steerFR.rotation.y = state.steerAngle;
 
-  if(state.bestLapPath && state.bestLapPath.length>2){
-    const elapsedFrac = (now-state.lapStartTime)/1 ;
+  if(state.timing && state.bestLapPath && state.bestLapPath.length>2){
     const total = state.bestLapPath.length;
     const lapElapsedMs = now - state.lapStartTime;
     const bestLapDurationMs = state.bestLapTime||1;
@@ -1530,6 +1610,8 @@ function frame(now){
     ghostKart.group.visible = frac<1;
     ghostKart.group.position.set(gx,0,gz);
     ghostKart.group.rotation.y = gyaw;
+  } else {
+    ghostKart.group.visible = false;
   }
 
   updateCamera(dt);
