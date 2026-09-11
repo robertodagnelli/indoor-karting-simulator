@@ -291,13 +291,20 @@ const HALF_W = 4.2;
 const CURB_W = 0.55;
 const WALL_GAP = 0.25;
 const WALL_H = 0.45;
+const LEVEL_H = 5.5;                      /* upper deck height (m) */
 const wallOffset = HALF_W+CURB_W+WALL_GAP;
 const SAMPLE_SPACING = 0.85;
 const FILLET_TARGET = 11;                 /* preferred turn radius (m) */
 const FILLET_MIN = wallOffset + 0.75;     /* keep inner wall outside arc center */
 const STRAIGHT_ANG = 6 * Math.PI/180;     /* below this, treat as colinear / no fillet */
 
-const verts = wayPoints.map(p=>({x:p[0], z:p[1]}));
+function wpLevel(p){
+  if(!p) return 0;
+  if(Array.isArray(p)) return +p[2] >= 1 ? 1 : 0;
+  if(p.level != null) return +p.level >= 1 ? 1 : 0;
+  return 0;
+}
+const verts = wayPoints.map(p=>({x:+p[0], z:+p[1], level:wpLevel(p), y: wpLevel(p)*LEVEL_H}));
 const MV = verts.length;
 
 function vnorm(x,z){ const l=Math.hypot(x,z)||1; return {x:x/l, z:z/l}; }
@@ -397,14 +404,14 @@ for(let i=0;i<MV;i++){
     const a0 = Math.atan2(pStart.x-cen.x, pStart.z-cen.z);
     /* Orbit direction around center is opposite the road-turn sign (see fillet math). */
     const sweep = -sign * absTurn;
-    pieces.push({type:'arc', cen, R, a0, sweep, sign, pStart, pEnd, dIn, dOut:d});
+    pieces.push({type:'arc', cen, R, a0, sweep, sign, pStart, pEnd, dIn, dOut:d, y:v0.y});
   }
 
   const straightA = {x:v0.x + d.x*startInset, z:v0.z + d.z*startInset};
   const straightB = {x:v1.x - d.x*endInset,   z:v1.z - d.z*endInset};
   const sLen = Math.hypot(straightB.x-straightA.x, straightB.z-straightA.z);
   if(sLen > 0.05){
-    pieces.push({type:'line', a:straightA, b:straightB, d});
+    pieces.push({type:'line', a:straightA, b:straightB, d, y0:v0.y, y1:v1.y});
   }
 }
 
@@ -416,10 +423,10 @@ const cum = [];
 const sampleMeta = [];
 let distAcc = 0;
 
-function pushSample(x, z, tx, tz, stepDist, meta){
+function pushSample(x, z, y, tx, tz, stepDist, meta){
   if(center.length) distAcc += stepDist;
   cum.push(distAcc);
-  center.push({x, z});
+  center.push({x, z, y: y||0});
   tangents.push({x:tx, z:tz});
   normals.push({x:-tz, z:tx});
   sampleMeta.push(meta || null);
@@ -438,7 +445,8 @@ for(let pi=0; pi<nPieces; pi++){
     const metaBase = {kind:'line', a:p.a, b:p.b, d:p.d, prev, next};
     for(let s=0;s<=steps;s++){
       const t=s/steps;
-      pushSample(p.a.x+dx*t, p.a.z+dz*t, tx, tz, s===0?0:len/steps, Object.assign({t}, metaBase));
+      const y = (p.y0||0) + ((p.y1||0)-(p.y0||0))*t;
+      pushSample(p.a.x+dx*t, p.a.z+dz*t, y, tx, tz, s===0?0:len/steps, Object.assign({t}, metaBase));
     }
   } else {
     const steps=Math.max(4, Math.round(Math.abs(p.sweep)*p.R/SAMPLE_SPACING));
@@ -451,7 +459,7 @@ for(let pi=0; pi<nPieces; pi++){
       const x=p.cen.x + p.R*Math.sin(ang);
       const z=p.cen.z + p.R*Math.cos(ang);
       const tn=vnorm(Math.cos(ang)*sdir, -Math.sin(ang)*sdir);
-      pushSample(x, z, tn.x, tn.z, s===0?0:arcLen/steps, meta);
+      pushSample(x, z, p.y||0, tn.x, tn.z, s===0?0:arcLen/steps, meta);
     }
   }
 }
@@ -472,16 +480,17 @@ const totalLength = cum[N-1] || distAcc;
 let bboxMinX=Infinity,bboxMaxX=-Infinity,bboxMinZ=Infinity,bboxMaxZ=-Infinity;
 center.forEach(p=>{ bboxMinX=Math.min(bboxMinX,p.x); bboxMaxX=Math.max(bboxMaxX,p.x); bboxMinZ=Math.min(bboxMinZ,p.z); bboxMaxZ=Math.max(bboxMaxZ,p.z); });
 
-function nearestCenterIndex(x, z){
+function nearestCenterIndex(x, z, y){
+  y = y||0;
   let best=Infinity, bestI=0;
   for(let i=0;i<N;i++){
-    const dx=x-center[i].x, dz=z-center[i].z;
-    const d=dx*dx+dz*dz;
+    const dx=x-center[i].x, dz=z-center[i].z, dy=y-(center[i].y||0);
+    const d=dx*dx+dz*dz+dy*dy*8;
     if(d<best){best=d;bestI=i;}
   }
   return bestI;
 }
-const wpSampleIdx = verts.map(v=>nearestCenterIndex(v.x, v.z));
+const wpSampleIdx = verts.map(v=>nearestCenterIndex(v.x, v.z, v.y));
 const SPAWN_WP = 0;
 const START_WP = Math.min(1, MV-1);
 
@@ -501,8 +510,8 @@ function vApex(piece, offset){
 function edgePoint(i, offset){
   const s = sampleMeta[i];
   if(s && s.kind==='arc'){
-    if(isVJoin(s, offset)) return vApex(s, offset);
-    return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset};
+    if(isVJoin(s, offset)) return Object.assign(vApex(s, offset), {y:center[i].y||0});
+    return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset, y:center[i].y||0};
   }
   if(s && s.kind==='line'){
     const n = leftOf(s.d);
@@ -512,9 +521,9 @@ function edgePoint(i, offset){
     if(isVJoin(s.prev, offset)) aOff = vApex(s.prev, offset);
     if(isVJoin(s.next, offset)) bOff = vApex(s.next, offset);
     const t = s.t;
-    return {x:aOff.x + (bOff.x-aOff.x)*t, z:aOff.z + (bOff.z-aOff.z)*t};
+    return {x:aOff.x + (bOff.x-aOff.x)*t, z:aOff.z + (bOff.z-aOff.z)*t, y:center[i].y||0};
   }
-  return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset};
+  return {x:center[i].x + normals[i].x*offset, z:center[i].z + normals[i].z*offset, y:center[i].y||0};
 }
 
 /* ---- geometry building helpers ---- */
@@ -536,9 +545,10 @@ function buildFlatRibbon(nearSigned, farSigned, colorFn){
     const dx = inB.x-inA.x, dz = inB.z-inA.z;
     const ex = outB.x-outA.x, ez = outB.z-outA.z;
     if(dx*dx+dz*dz < 1e-8 && ex*ex+ez*ez < 1e-8) continue;
+    const yA = inA.y||0, yB = inB.y||0, yAo = outA.y||0, yBo = outB.y||0;
     const c=colorFn(cum[i]);
-    positions.push(inA.x,0.0,inA.z, outA.x,0.0,outA.z, outB.x,0.0,outB.z);
-    positions.push(inA.x,0.0,inA.z, outB.x,0.0,outB.z, inB.x,0.0,inB.z);
+    positions.push(inA.x,yA,inA.z, outA.x,yAo,outA.z, outB.x,yBo,outB.z);
+    positions.push(inA.x,yA,inA.z, outB.x,yBo,outB.z, inB.x,yB,inB.z);
     for(let k=0;k<6;k++){ colors.push(c[0],c[1],c[2]); normalsArr.push(0,1,0); }
   }
   return makeMesh(positions,colors,normalsArr,{});
@@ -556,10 +566,12 @@ function buildWallRibbon(offsetSigned, yBottom, yTop, colorFn){
     /* Drop leftover fins that run against the track (overshoot past a V) */
     const tA=tangents[i];
     if(dx*tA.x + dz*tA.z < -0.15 * seg) continue;
+    const yA = (pA.y||0) + yBottom, yB = (pB.y||0) + yBottom;
+    const yAt = (pA.y||0) + yTop, yBt = (pB.y||0) + yTop;
     const nA=normals[i];
     const c=colorFn(cum[i]);
-    positions.push(pA.x,yBottom,pA.z, pA.x,yTop,pA.z, pB.x,yTop,pB.z);
-    positions.push(pA.x,yBottom,pA.z, pB.x,yTop,pB.z, pB.x,yBottom,pB.z);
+    positions.push(pA.x,yA,pA.z, pA.x,yAt,pA.z, pB.x,yBt,pB.z);
+    positions.push(pA.x,yA,pA.z, pB.x,yBt,pB.z, pB.x,yB,pB.z);
     for(let k=0;k<6;k++){ colors.push(c[0],c[1],c[2]); normalsArr.push(nA.x*sgn,0,nA.z*sgn); }
   }
   return makeMesh(positions,colors,normalsArr,{side:THREE.DoubleSide});
@@ -586,13 +598,78 @@ function wallColor(d){ return (Math.floor(d/4)%2===0) ? [0.22,0.22,0.24] : [0.08
 const wallR = buildWallRibbon(wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallR);
 const wallL = buildWallRibbon(-wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallL);
 
+/* underside on elevated / ramp sections */
+(function(){
+  const positions=[], colors=[], normalsArr=[];
+  const thick = 0.18;
+  const col = [0.10,0.11,0.12];
+  for(let i=0;i<N;i++){
+    const j=(i+1)%N;
+    if((center[i].y||0) < 0.12 && (center[j].y||0) < 0.12) continue;
+    const inA=edgePoint(i, -HALF_W), outA=edgePoint(i, HALF_W);
+    const inB=edgePoint(j, -HALF_W), outB=edgePoint(j, HALF_W);
+    const yA=(inA.y||0)-thick, yAo=(outA.y||0)-thick, yB=(inB.y||0)-thick, yBo=(outB.y||0)-thick;
+    positions.push(inA.x,yA,inA.z, outB.x,yBo,outB.z, outA.x,yAo,outA.z);
+    positions.push(inA.x,yA,inA.z, inB.x,yB,inB.z, outB.x,yBo,outB.z);
+    for(let k=0;k<6;k++){ colors.push(col[0],col[1],col[2]); normalsArr.push(0,-1,0); }
+  }
+  if(positions.length){
+    const mesh = makeMesh(positions,colors,normalsArr,{});
+    trackGroup.add(mesh);
+  }
+})();
+
+/* posts under the upper deck — skip ramps and anything over the lower track */
+(function(){
+  const deckThick = 0.18;
+  const topGap = 0.06;
+  const h = Math.max(0.4, LEVEL_H - deckThick - topGap);
+  const geo = new THREE.BoxGeometry(0.35, h, 0.35);
+  const mat = new THREE.MeshStandardMaterial({color:0x3a3d42, flatShading:true, roughness:0.9});
+  const half = HALF_W + CURB_W + 0.55;
+
+  function isUpperFlat(i){
+    const y = center[i].y||0;
+    if(y < LEVEL_H - 0.12) return false;
+    for(let k=-2;k<=2;k++){
+      const yk = center[(i+k+N)%N].y||0;
+      if(yk < LEVEL_H - 0.18) return false;
+    }
+    return true;
+  }
+  function lowerTrackAt(x, z){
+    for(let i=0;i<N;i++){
+      const cy = center[i].y||0;
+      if(cy > LEVEL_H * 0.42) continue;
+      const dx=x-center[i].x, dz=z-center[i].z;
+      const lat = Math.abs(dx*normals[i].x + dz*normals[i].z);
+      const along = dx*tangents[i].x + dz*tangents[i].z;
+      const i1=(i+1)%N;
+      const ds = Math.hypot(center[i1].x-center[i].x, center[i1].z-center[i].z) || SAMPLE_SPACING;
+      if(lat < half && along > -0.6 && along < ds + 0.6) return true;
+    }
+    return false;
+  }
+
+  let last = -999;
+  for(let i=0;i<N;i++){
+    if(!isUpperFlat(i)) continue;
+    if(cum[i] - last < 7) continue;
+    if(lowerTrackAt(center[i].x, center[i].z)) continue;
+    last = cum[i];
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(center[i].x, h * 0.5, center[i].z);
+    trackGroup.add(m);
+  }
+})();
+
 /* start/finish checker — waypoint 1 */
 (function(){
   const startIdx = wpSampleIdx[Math.min(1, MV-1)];
   const t0=tangents[startIdx];
   const yaw0 = Math.atan2(t0.x, t0.z);
   const grp = new THREE.Group();
-  grp.position.set(center[startIdx].x, 0.03, center[startIdx].z);
+  grp.position.set(center[startIdx].x, (center[startIdx].y||0) + 0.03, center[startIdx].z);
   grp.rotation.y = yaw0;
   const cols=8, rows=2;
   const cw=(HALF_W*2)/cols, cl=1.1;
@@ -849,9 +926,11 @@ function createKart(ghost){
 }
 
 const kart = createKart(false);
+kart.group.rotation.order = 'YXZ';
 scene.add(kart.group);
 
 const ghostKart = createKart(true);
+ghostKart.group.rotation.order = 'YXZ';
 ghostKart.group.visible = false;
 scene.add(ghostKart.group);
 
@@ -889,14 +968,15 @@ function poseAtWaypoint(wpI, lateral){
   return {
     x: center[i].x + n.x*lateral,
     z: center[i].z + n.z*lateral,
+    y: center[i].y||0,
     yaw: Math.atan2(t.x, t.z)
   };
 }
 
 const spawnPose = poseAtWaypoint(SPAWN_WP);
 const state = {
-  x: spawnPose.x, z: spawnPose.z,
-  yaw: spawnPose.yaw, vx:0, vz:0, r:0, steerAngle:0,
+  x: spawnPose.x, z: spawnPose.z, y: spawnPose.y||0,
+  yaw: spawnPose.yaw, vx:0, vz:0, r:0, steerAngle:0, pitch:0,
   slip:0, slide:0, speed:0,
   trackIdx:0, prevIdx:0,
   lapStartTime:0, lapCount:1, timing:false,
@@ -913,11 +993,12 @@ findInitialTrackIndex();
 function findInitialTrackIndex(){
   let best=Infinity, bestI=0;
   for(let i=0;i<N;i++){
-    const dx=state.x-center[i].x, dz=state.z-center[i].z;
-    const d=dx*dx+dz*dz;
+    const dx=state.x-center[i].x, dz=state.z-center[i].z, dy=(state.y||0)-(center[i].y||0);
+    const d=dx*dx+dz*dz+dy*dy*8;
     if(d<best){best=d;bestI=i;}
   }
   state.trackIdx=bestI; state.prevIdx=bestI;
+  if(typeof applySurface === 'function') applySurface(bestI);
 }
 
 function snapshotGates(){
@@ -928,7 +1009,8 @@ function snapshotGates(){
   }
 }
 snapshotGates();
-kart.group.position.set(state.x, 0, state.z);
+kart.group.position.set(state.x, state.y||0, state.z);
+kart.group.rotation.order = 'YXZ';
 kart.group.rotation.y = state.yaw;
 
 function resetBoost(){
@@ -938,16 +1020,16 @@ function resetBoost(){
 }
 
 function copyPose(from, to){
-  to.x = from.x; to.z = from.z; to.yaw = from.yaw;
-  to.steerAngle = from.steerAngle;
+  to.x = from.x; to.z = from.z; to.y = from.y||0; to.yaw = from.yaw;
+  to.steerAngle = from.steerAngle; to.pitch = from.pitch||0;
 }
-const prevPose = {x:state.x, z:state.z, yaw:state.yaw, steerAngle:0};
-const visPose = {x:state.x, z:state.z, yaw:state.yaw, steerAngle:0};
+const prevPose = {x:state.x, z:state.z, y:state.y||0, yaw:state.yaw, steerAngle:0, pitch:0};
+const visPose = {x:state.x, z:state.z, y:state.y||0, yaw:state.yaw, steerAngle:0, pitch:0};
 
 function resetKart(){
   const p = poseAtWaypoint(SPAWN_WP);
-  state.x = p.x; state.z = p.z; state.yaw = p.yaw;
-  state.vx=0; state.vz=0; state.r=0; state.steerAngle=0;
+  state.x = p.x; state.z = p.z; state.y = p.y||0; state.yaw = p.yaw;
+  state.vx=0; state.vz=0; state.r=0; state.steerAngle=0; state.pitch=0;
   state.slip=0; state.slide=0; state.speed=0;
   state.wheelPos = 0;
   resetBoost();
@@ -956,8 +1038,10 @@ function resetKart(){
   state.lapStartTime = 0;
   state.currentLapPath = [];
   state.nextCp = START_WP;
-  kart.group.position.set(state.x, 0, state.z);
+  kart.group.position.set(state.x, state.y||0, state.z);
+  kart.group.rotation.order = 'YXZ';
   kart.group.rotation.y = state.yaw;
+  kart.group.rotation.x = -(state.pitch||0);
   kart.steerFL.rotation.y = 0;
   kart.steerFR.rotation.y = 0;
   kart.helm.rotation.z = 0;
@@ -986,6 +1070,7 @@ function stepPhysics(dt, input){
     if(input.brake>0) Fx -= input.brake*P.maxBrakeForce*(u>=0?1:-1);
   }
   Fx -= P.dragCoeff*u*Math.abs(u) + P.rollResist*u;
+  Fx -= P.mass * P.g * Math.sin(state.pitch||0);
 
   const SLIDE_MIN = 10/3.6; /* no lateral slip below 10 km/h */
   const wheelbase = P.Lf + P.Lr;
@@ -1046,20 +1131,48 @@ function stepPhysics(dt, input){
   state.speed = Math.hypot(state.vx, state.vz);
 }
 
-function nearestTrackIndex(x, z, hint){
+function nearestTrackIndex(x, z, hint, y){
+  y = y != null ? y : (state.y||0);
   const start = ((hint||0)%N+N)%N;
   let best=Infinity, bestI=start;
   for(let k=-18;k<=18;k++){
     const idx=((start+k)%N+N)%N;
-    const dx=x-center[idx].x, dz=z-center[idx].z;
-    const d=dx*dx+dz*dz;
+    const dx=x-center[idx].x, dz=z-center[idx].z, dy=y-(center[idx].y||0);
+    const d=dx*dx+dz*dz+dy*dy*8;
     if(d<best){best=d;bestI=idx;}
   }
   return bestI;
 }
 
+function applySurface(hint){
+  const iHint = nearestTrackIndex(state.x, state.z, hint, state.y);
+  let bestD = Infinity, y = center[iHint].y||0, pitch = 0, bestI = iHint;
+  for(let k=-2;k<=2;k++){
+    const i0 = (iHint+k+N)%N;
+    const i1 = (i0+1)%N;
+    const ax=center[i0].x, az=center[i0].z, ay=center[i0].y||0;
+    const bx=center[i1].x, bz=center[i1].z, by=center[i1].y||0;
+    const dx=bx-ax, dz=bz-az;
+    const len2=dx*dx+dz*dz;
+    if(len2 < 1e-8) continue;
+    const t = clamp(((state.x-ax)*dx + (state.z-az)*dz) / len2, 0, 1);
+    const px=ax+dx*t, pz=az+dz*t;
+    const d=(state.x-px)*(state.x-px)+(state.z-pz)*(state.z-pz);
+    if(d >= bestD) continue;
+    bestD = d;
+    bestI = t < 0.5 ? i0 : i1;
+    y = ay + (by-ay)*t;
+    const pathPitch = Math.atan2(by-ay, Math.sqrt(len2));
+    const along = Math.sin(state.yaw)*tangents[i0].x + Math.cos(state.yaw)*tangents[i0].z;
+    pitch = pathPitch * (along >= 0 ? 1 : -1);
+  }
+  state.y = y;
+  state.pitch = pitch;
+  state.trackIdx = bestI;
+}
+
 function updateTrackIndexAndCollide(){
-  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx);
+  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx, state.y);
   const fX=Math.sin(state.yaw), fZ=Math.cos(state.yaw);
   const rX=Math.cos(state.yaw), rZ=-Math.sin(state.yaw);
   const hx=P.kartHalfWidth, hz=P.kartHalfLength;
@@ -1073,7 +1186,8 @@ function updateTrackIndexAndCollide(){
     for(let c=0;c<corners.length;c++){
       const px = state.x + rX*corners[c][0] + fX*corners[c][1];
       const pz = state.z + rZ*corners[c][0] + fZ*corners[c][1];
-      const i = nearestTrackIndex(px, pz, state.trackIdx);
+      const i = nearestTrackIndex(px, pz, state.trackIdx, state.y);
+      if(Math.abs((center[i].y||0) - (state.y||0)) > 1.6) continue;
       const nrm = normals[i];
       const offset = (px-center[i].x)*nrm.x + (pz-center[i].z)*nrm.z;
       const side = offset >= 0 ? 1 : -1;
@@ -1098,7 +1212,8 @@ function updateTrackIndexAndCollide(){
     }
     state.vx *= 0.975; state.vz *= 0.975;
   }
-  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx);
+  state.trackIdx = nearestTrackIndex(state.x, state.z, state.trackIdx, state.y);
+  applySurface(state.trackIdx);
   return state.trackIdx;
 }
 
@@ -1108,7 +1223,7 @@ function crossedGate(wpI, prevAlong){
   const dx = state.x-c.x, dz = state.z-c.z;
   const along = dx*t.x + dz*t.z;
   const lat = dx*nrm.x + dz*nrm.z;
-  const onTrack = Math.abs(lat) < (HALF_W + CURB_W + 0.6);
+  const onTrack = Math.abs(lat) < (HALF_W + CURB_W + 0.6) && Math.abs((state.y||0)-(c.y||0)) < 1.4;
   const hit = onTrack && prevAlong < 0 && along >= 0;
   return { along, hit };
 }
@@ -1116,7 +1231,7 @@ function crossedGate(wpI, prevAlong){
 function beginLap(nowMs){
   state.timing = true;
   state.lapStartTime = nowMs;
-  state.currentLapPath = [{x:state.x, z:state.z}];
+  state.currentLapPath = [{x:state.x, z:state.z, y:state.y||0}];
   state.nextCp = (START_WP + 1) % MV;
   resetBoost();
 }
@@ -1318,17 +1433,18 @@ let camInit = false;
 
 function updateCamera(dt, vis){
   const yaw = vis.yaw, x = vis.x, z = vis.z;
+  const y = vis.y || 0;
   const fX=Math.sin(yaw), fZ=Math.cos(yaw);
   const mode = camModes[camModeIdx];
   let targetPos, targetLook, targetFov;
 
   if(mode==='chase'){
-    targetPos = new THREE.Vector3(x - fX*4.0, 1.85, z - fZ*4.0);
-    targetLook = new THREE.Vector3(x + fX*2.4, 0.75, z + fZ*2.4);
+    targetPos = new THREE.Vector3(x - fX*4.0, y + 1.85, z - fZ*4.0);
+    targetLook = new THREE.Vector3(x + fX*2.4, y + 0.75, z + fZ*2.4);
     targetFov = 58 + clamp(state.speed*0.35, 0, 4);
   } else {
-    targetPos = new THREE.Vector3(x + fX*0.05, 0.98, z + fZ*0.05);
-    targetLook = new THREE.Vector3(x + fX*10, 0.85, z + fZ*10);
+    targetPos = new THREE.Vector3(x + fX*0.05, y + 0.98, z + fZ*0.05);
+    targetLook = new THREE.Vector3(x + fX*10, y + 0.85, z + fZ*10);
     targetFov = 68 + clamp(state.speed*0.4, 0, 5);
   }
 
@@ -1853,16 +1969,20 @@ function frame(now){
   const alpha = clamp(acc / FIXED_DT, 0, 1);
   visPose.x = lerp(prevPose.x, state.x, alpha);
   visPose.z = lerp(prevPose.z, state.z, alpha);
+  visPose.y = lerp(prevPose.y||0, state.y||0, alpha);
   visPose.yaw = lerpAngle(prevPose.yaw, state.yaw, alpha);
   visPose.steerAngle = lerp(prevPose.steerAngle, state.steerAngle, alpha);
+  visPose.pitch = lerp(prevPose.pitch||0, state.pitch||0, alpha);
 
   if(state.timing){
-    state.currentLapPath.push({x:state.x, z:state.z});
+    state.currentLapPath.push({x:state.x, z:state.z, y:state.y||0});
     if(state.currentLapPath.length>4000) state.currentLapPath.shift();
   }
 
-  kart.group.position.set(visPose.x, 0, visPose.z);
+  kart.group.rotation.order = 'YXZ';
+  kart.group.position.set(visPose.x, visPose.y, visPose.z);
   kart.group.rotation.y = visPose.yaw;
+  kart.group.rotation.x = -visPose.pitch;
 
   const rollF = (state.uLocal||0)/kart.rF;
   const rollR = (state.uLocal||0)/kart.rR;
@@ -1884,11 +2004,15 @@ function frame(now){
     const a = state.bestLapPath[gi], b=state.bestLapPath[gi+1];
     const localT = frac*(total-1)-gi;
     const gx = lerp(a.x,b.x,localT), gz = lerp(a.z,b.z,localT);
-    const dx=b.x-a.x, dz=b.z-a.z;
+    const gy = lerp(a.y||0, b.y||0, localT);
+    const dx=b.x-a.x, dz=b.z-a.z, dy=(b.y||0)-(a.y||0);
     const gyaw = Math.atan2(dx,dz);
+    const gpitch = Math.atan2(dy, Math.hypot(dx,dz)||1);
     ghostKart.group.visible = frac<1;
-    ghostKart.group.position.set(gx,0,gz);
+    ghostKart.group.rotation.order = 'YXZ';
+    ghostKart.group.position.set(gx, gy, gz);
     ghostKart.group.rotation.y = gyaw;
+    ghostKart.group.rotation.x = -gpitch;
   } else {
     ghostKart.group.visible = false;
   }

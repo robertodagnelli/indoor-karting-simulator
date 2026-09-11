@@ -54,7 +54,7 @@
   <aside>
     <div>
       <h1>Track Editor</h1>
-      <p class="sub">Click corner anchors. Changes save automatically and show up in the simulator menu.</p>
+      <p class="sub">Click corner anchors. Ctrl+click places a point on the upper floor. Changes save automatically.</p>
     </div>
     <div>
       <label for="trackSelect">Circuit</label>
@@ -77,15 +77,15 @@
       <button type="button" id="btnClear" class="danger">Clear points</button>
       <button type="button" id="btnDelete" class="danger">Delete track</button>
     </div>
-    <p class="hint">Autosaves to this browser. Open the simulator start screen to pick a circuit.</p>
+    <p class="hint">Autosaves to this browser. Ground = click. Upper floor = <kbd>Ctrl</kbd>+click (same to toggle a point). Ramps form between floors.</p>
     <div id="status" class="dim">Loading…</div>
     <a class="back" id="backLink" href="gokart_simulator.html">← back to simulator</a>
   </aside>
   <main>
     <canvas id="canvas"></canvas>
     <div class="help">
-      <kbd>Click</kbd> add · <kbd>Drag</kbd> move · <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove ·
-      <kbd>Scroll</kbd> zoom · <kbd>Space</kbd>+drag pan
+      <kbd>Click</kbd> ground · <kbd>Ctrl</kbd>+click upper floor · <kbd>Drag</kbd> move ·
+      <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove · <kbd>Scroll</kbd> zoom · <kbd>Space</kbd>+drag pan
     </div>
   </main>
 </div>
@@ -120,6 +120,12 @@ function setStatus(msg, kind){
 function w2s(x, z){ return { x: (x - view.ox) * view.scale, y: (z - view.oy) * view.scale }; }
 function s2w(sx, sy){ return { x: sx / view.scale + view.ox, z: sy / view.scale + view.oy }; }
 function snap(v){ return Math.round(v); }
+function packPoint(p){
+  return TrackLib.packWp(p.x, p.z, p.level);
+}
+function unpackPoint(p){
+  return { x: +p[0], z: +p[1], level: TrackLib.wpLevel(p) };
+}
 
 function fitView(){
   const cw = canvas.clientWidth || canvas.parentElement.clientWidth || 800;
@@ -200,32 +206,40 @@ function drawGrid(){
 function drawPreview(){
   if(points.length < 3){
     if(points.length >= 2){
-      ctx.beginPath();
-      points.forEach((p,i)=>{ const m=w2s(p.x,p.z); if(i===0) ctx.moveTo(m.x,m.y); else ctx.lineTo(m.x,m.y); });
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      for(let i=0;i<points.length-1;i++){
+        const a=w2s(points[i].x,points[i].z), b=w2s(points[i+1].x,points[i+1].z);
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+        const ramp = (points[i].level||0) !== (points[i+1].level||0);
+        ctx.strokeStyle = ramp ? 'rgba(90,180,255,0.7)' : 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
     return;
   }
-  const path = TrackLib.buildCenterline(points);
+  const path = TrackLib.buildCenterline(points.map(packPoint));
   if(!path.N) return;
   const roadW = Math.max(4, HALF_W * 2 * view.scale);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  for(let i=0;i<=path.N;i++){
-    const p = path.center[i % path.N];
-    const m = w2s(p.x, p.z);
-    if(i===0) ctx.moveTo(m.x, m.y); else ctx.lineTo(m.x, m.y);
+  for(let pass=0; pass<2; pass++){
+    for(let i=0;i<path.N;i++){
+      const a = path.center[i], b = path.center[(i+1)%path.N];
+      const ya = a.y||0, yb = b.y||0;
+      const upper = ya > 0.4 && yb > 0.4;
+      const ramp = Math.abs(ya-yb) > 0.4;
+      if(pass===0 && (upper||ramp)) continue;
+      if(pass===1 && !(upper||ramp)) continue;
+      const m0=w2s(a.x,a.z), m1=w2s(b.x,b.z);
+      ctx.beginPath(); ctx.moveTo(m0.x,m0.y); ctx.lineTo(m1.x,m1.y);
+      ctx.strokeStyle = ramp ? 'rgba(90,180,255,0.35)' : (upper ? 'rgba(80,160,230,0.28)' : 'rgba(255,255,255,0.22)');
+      ctx.lineWidth = roadW + Math.max(2, CURB_W * 2 * view.scale);
+      ctx.stroke();
+      ctx.strokeStyle = ramp ? 'rgba(70,140,210,0.95)' : (upper ? 'rgba(48,72,96,0.95)' : 'rgba(40,42,48,0.95)');
+      ctx.lineWidth = roadW;
+      ctx.stroke();
+    }
   }
-  ctx.closePath();
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-  ctx.lineWidth = roadW + Math.max(2, CURB_W * 2 * view.scale);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(40,42,48,0.95)';
-  ctx.lineWidth = roadW;
-  ctx.stroke();
 
   ctx.beginPath();
   points.forEach((p,i)=>{ const m=w2s(p.x,p.z); if(i===0) ctx.moveTo(m.x,m.y); else ctx.lineTo(m.x,m.y); });
@@ -243,16 +257,17 @@ function drawPreview(){
 function drawAnchors(){
   points.forEach((p, i)=>{
     const m = w2s(p.x, p.z);
+    const upper = !!p.level;
     ctx.beginPath();
     ctx.arc(m.x, m.y, i === selected ? 7 : 5, 0, Math.PI * 2);
-    ctx.fillStyle = i === 0 ? '#ffb020' : (i === selected ? '#3ddc84' : '#e7e6e2');
+    ctx.fillStyle = i === 0 ? '#ffb020' : (upper ? '#5ad4ff' : (i === selected ? '#3ddc84' : '#e7e6e2'));
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = upper ? 'rgba(30,90,140,0.85)' : 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = upper ? 2 : 1.5;
     ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.55)';
     ctx.font = '10px monospace';
-    ctx.fillText(String(i), m.x + 8, m.y - 8);
+    ctx.fillText(String(i) + (upper ? '↑' : ''), m.x + 8, m.y - 8);
   });
 }
 
@@ -283,7 +298,7 @@ function saveCurrentQuiet(){
     TracksStore.upsert({
       id: currentId,
       name: (document.getElementById('trackName').value || currentId).trim(),
-      wayPoints: points.map(p => [p.x, p.z])
+      wayPoints: points.map(packPoint)
     });
   }catch(_){}
 }
@@ -298,7 +313,7 @@ function loadTrack(id){
   document.getElementById('trackId').value = t.id;
   document.getElementById('trackName').value = t.name || t.id;
   document.getElementById('trackSelect').value = t.id;
-  points = (t.wayPoints || []).map(p => ({ x: +p[0], z: +p[1] }));
+  points = (t.wayPoints || []).map(unpackPoint);
   selected = -1;
   viewFitted = true;
   fitView();
@@ -334,7 +349,7 @@ function doSave(){
     const saved = TracksStore.upsert({
       id: idInput,
       name,
-      wayPoints: points.map(p => [p.x, p.z])
+      wayPoints: points.map(packPoint)
     });
     /* Id change = rename: drop the previous entry (never delete indoor). */
     if(prevId && prevId !== saved.id && prevId !== 'indoor'){
@@ -432,15 +447,22 @@ canvas.addEventListener('pointerdown', e=>{
     return;
   }
   if(e.button !== 0) return;
+  const upper = !!(e.ctrlKey || e.metaKey);
   const i = hitPoint(p.x, p.y);
   if(i >= 0){
     selected = i;
+    if(upper){
+      points[i].level = points[i].level ? 0 : 1;
+      draw();
+      scheduleSave();
+      return;
+    }
     drag = { kind: 'point', idx: i };
     draw();
     return;
   }
   const w = s2w(p.x, p.y);
-  points.push({ x: snap(w.x), z: snap(w.z) });
+  points.push({ x: snap(w.x), z: snap(w.z), level: upper ? 1 : 0 });
   selected = points.length - 1;
   drag = { kind: 'point', idx: selected, moved: false };
   viewFitted = false;

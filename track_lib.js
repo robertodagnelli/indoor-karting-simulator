@@ -2,7 +2,8 @@
  * Shared track centerline builder — closed polyline with circular corner fillets.
  * Used by the simulator and the 2D track editor.
  *
- * Track format: { wayPoints: [[x,z], ...] }  (closed loop, min 3 points)
+ * Track format: { wayPoints: [[x,z] | [x,z,level], ...] }  (closed loop, min 3)
+ * level 0 = ground, 1 = upper deck (height DEFAULTS.levelH). Omitted level = 0.
  */
 (function (global) {
   "use strict";
@@ -17,7 +18,8 @@
     wallGap: 0.25,
     sampleSpacing: 0.85,
     filletTarget: 11,
-    straightAng: 6 * Math.PI / 180
+    straightAng: 6 * Math.PI / 180,
+    levelH: 5.5
   };
 
   function emptyPath(halfW, wallOffset) {
@@ -28,21 +30,38 @@
     };
   }
 
+  function packWp(x, z, level) {
+    const lv = +level >= 1 ? 1 : 0;
+    return lv ? [+x, +z, 1] : [+x, +z];
+  }
+
+  function wpLevel(p) {
+    if (!p) return 0;
+    if (Array.isArray(p)) return +p[2] >= 1 ? 1 : 0;
+    if (p.level != null) return +p.level >= 1 ? 1 : 0;
+    if (p.y != null && +p.y > 1) return 1;
+    return 0;
+  }
+
   /** Accept wayPoints array, track object, or nodes (anchors only). */
   function normalizeWayPoints(input) {
     if (!input) return [];
     if (Array.isArray(input)) {
       if (!input.length) return [];
       if (typeof input[0] === "number" || (Array.isArray(input[0]) && input[0].length >= 2)) {
-        return input.map(p => [+p[0], +p[1]]);
+        return input.map(p => packWp(p[0], p[1], wpLevel(p)));
       }
-      return input.map(n => [+(n.x != null ? n.x : n[0]), +(n.z != null ? n.z : n[1])]);
+      return input.map(n => packWp(
+        n.x != null ? n.x : n[0],
+        n.z != null ? n.z : n[1],
+        wpLevel(n)
+      ));
     }
     if (Array.isArray(input.wayPoints) && input.wayPoints.length) {
-      return input.wayPoints.map(p => [+p[0], +p[1]]);
+      return input.wayPoints.map(p => packWp(p[0], p[1], wpLevel(p)));
     }
     if (Array.isArray(input.nodes) && input.nodes.length) {
-      return input.nodes.map(n => [+n.x, +n.z]);
+      return input.nodes.map(n => packWp(n.x, n.z, wpLevel(n)));
     }
     return [];
   }
@@ -61,11 +80,16 @@
     const SAMPLE_SPACING = opts.sampleSpacing;
     const FILLET_TARGET = opts.filletTarget;
     const STRAIGHT_ANG = opts.straightAng;
+    const LEVEL_H = opts.levelH;
 
     const wayPoints = normalizeWayPoints(wayPointsOrTrack);
     if (wayPoints.length < 3) return emptyPath(HALF_W, wallOffset);
 
-    const verts = wayPoints.map(p => ({ x: p[0], z: p[1] }));
+    const verts = wayPoints.map(p => ({
+      x: p[0], z: p[1],
+      level: wpLevel(p),
+      y: wpLevel(p) * LEVEL_H
+    }));
     const MV = verts.length;
 
     const segLen = [];
@@ -138,14 +162,14 @@
         const a0 = Math.atan2(pStart.x - cen.x, pStart.z - cen.z);
         /* Orbit around center is opposite the heading-turn sign (matches simulator). */
         const sweep = -sign * c0.filletAng;
-        pieces.push({ type: "arc", cen, R, a0, sweep, sign, pStart, pEnd });
+        pieces.push({ type: "arc", cen, R, a0, sweep, sign, pStart, pEnd, y: v0.y });
       }
 
       const straightA = { x: v0.x + d.x * startInset, z: v0.z + d.z * startInset };
       const straightB = { x: v1.x - d.x * endInset, z: v1.z - d.z * endInset };
       const sLen = Math.hypot(straightB.x - straightA.x, straightB.z - straightA.z);
       if (sLen > 0.05) {
-        pieces.push({ type: "line", a: straightA, b: straightB, d });
+        pieces.push({ type: "line", a: straightA, b: straightB, d, y0: v0.y, y1: v1.y });
       }
     }
 
@@ -155,10 +179,10 @@
     const cum = [];
     let distAcc = 0;
 
-    function pushSample(x, z, tx, tz, stepDist) {
+    function pushSample(x, z, y, tx, tz, stepDist) {
       if (center.length) distAcc += stepDist;
       cum.push(distAcc);
-      center.push({ x, z });
+      center.push({ x, z, y: y || 0 });
       tangents.push({ x: tx, z: tz });
       normals.push({ x: -tz, z: tx });
     }
@@ -172,19 +196,21 @@
         const tx = dx / len, tz = dz / len;
         for (let s = 0; s < steps; s++) {
           const t = s / steps;
-          pushSample(p.a.x + dx * t, p.a.z + dz * t, tx, tz, s === 0 ? 0 : len / steps);
+          const y = (p.y0 != null && p.y1 != null) ? p.y0 + (p.y1 - p.y0) * t : (p.y0 || 0);
+          pushSample(p.a.x + dx * t, p.a.z + dz * t, y, tx, tz, s === 0 ? 0 : len / steps);
         }
-        pushSample(p.b.x, p.b.z, tx, tz, len / steps);
+        pushSample(p.b.x, p.b.z, p.y1 != null ? p.y1 : (p.y0 || 0), tx, tz, len / steps);
       } else {
         const steps = Math.max(4, Math.round(Math.abs(p.sweep) * p.R / SAMPLE_SPACING));
         const sdir = Math.sign(p.sweep) || p.sign || 1;
+        const y = p.y || 0;
         for (let s = 0; s <= steps; s++) {
           const t = s / steps;
           const ang = p.a0 + p.sweep * t;
           const x = p.cen.x + p.R * Math.sin(ang);
           const z = p.cen.z + p.R * Math.cos(ang);
           const tn = vnorm(Math.cos(ang) * sdir, -Math.sin(ang) * sdir);
-          pushSample(x, z, tn.x, tn.z, s === 0 ? 0 : Math.abs(p.sweep) * p.R / steps);
+          pushSample(x, z, y, tn.x, tn.z, s === 0 ? 0 : Math.abs(p.sweep) * p.R / steps);
         }
       }
     }
@@ -207,7 +233,7 @@
     return {
       center, tangents, normals, cum, N, totalLength,
       bboxMinX, bboxMaxX, bboxMinZ, bboxMaxZ,
-      halfW: HALF_W, wallOffset
+      halfW: HALF_W, wallOffset, levelH: LEVEL_H
     };
   }
 
@@ -230,12 +256,14 @@
       if (o < 0 && kappa < 0) o = Math.max(o, -maxIn);
       if (o > 0 && kappa > 0) o = Math.min(o, maxIn);
     }
-    return { x: center[i].x + normals[i].x * o, z: center[i].z + normals[i].z * o };
+    return { x: center[i].x + normals[i].x * o, z: center[i].z + normals[i].z * o, y: center[i].y || 0 };
   }
 
   global.TrackLib = {
     DEFAULTS,
     normalizeWayPoints,
+    packWp,
+    wpLevel,
     buildCenterline,
     buildTrack,
     edgePoint

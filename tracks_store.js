@@ -19,6 +19,19 @@
   let cache = null;
   let readyPromise = null;
 
+  function packWp(x, z, level) {
+    const lv = +level >= 1 ? 1 : 0;
+    return lv ? [+x, +z, 1] : [+x, +z];
+  }
+
+  function wpLevel(p) {
+    if (!p) return 0;
+    if (Array.isArray(p)) return +p[2] >= 1 ? 1 : 0;
+    if (p.level != null) return +p.level >= 1 ? 1 : 0;
+    if (p.y != null && +p.y > 1) return 1;
+    return 0;
+  }
+
   function normalizeWayPoints(input) {
     if (global.TrackLib && typeof global.TrackLib.normalizeWayPoints === "function") {
       return global.TrackLib.normalizeWayPoints(input);
@@ -26,11 +39,17 @@
     if (!input) return [];
     if (Array.isArray(input)) {
       if (!input.length) return [];
-      if (Array.isArray(input[0])) return input.map(p => [+p[0], +p[1]]);
-      return input.map(n => [+(n.x != null ? n.x : n[0]), +(n.z != null ? n.z : n[1])]);
+      if (typeof input[0] === "number" || (Array.isArray(input[0]) && input[0].length >= 2)) {
+        return input.map(p => packWp(p[0], p[1], wpLevel(p)));
+      }
+      return input.map(n => packWp(
+        n.x != null ? n.x : n[0],
+        n.z != null ? n.z : n[1],
+        wpLevel(n)
+      ));
     }
-    if (Array.isArray(input.wayPoints)) return input.wayPoints.map(p => [+p[0], +p[1]]);
-    if (Array.isArray(input.nodes)) return input.nodes.map(n => [+n.x, +n.z]);
+    if (Array.isArray(input.wayPoints)) return input.wayPoints.map(p => packWp(p[0], p[1], wpLevel(p)));
+    if (Array.isArray(input.nodes)) return input.nodes.map(n => packWp(n.x, n.z, wpLevel(n)));
     return [];
   }
 
@@ -63,7 +82,7 @@
     return {
       id: t.id,
       name: t.name || t.id,
-      wayPoints: (t.wayPoints || []).map(p => [+p[0], +p[1]]),
+      wayPoints: normalizeWayPoints(t.wayPoints || []),
       updatedAt: t.updatedAt || Date.now()
     };
   }
