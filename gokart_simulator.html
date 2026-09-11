@@ -13,6 +13,7 @@
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:var(--mono);touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;}
   #c{display:block;position:fixed;inset:0;width:100%;height:100%;outline:none;}
+  body.playing, body.playing #c, body.playing #hud{cursor:none;}
 
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;backdrop-filter:blur(3px);color:var(--text);}
 
@@ -37,6 +38,48 @@
   #topRightBtns button:active{background:rgba(255,176,32,0.25);}
 
   #hint{position:absolute;bottom:14px;right:14px;padding:8px 12px;font-size:11px;color:var(--dim);max-width:220px;text-align:right;}
+
+  #steerHud{
+    position:relative;left:auto;bottom:auto;transform:none;
+    width:108px;height:108px;pointer-events:none;margin:0 auto;
+  }
+  #steerHud .bezel{
+    position:absolute;inset:0;border-radius:50%;
+    border:1px solid rgba(255,255,255,0.12);
+    background:rgba(12,14,16,0.55);
+    box-shadow:0 4px 16px rgba(0,0,0,0.35);
+  }
+  #steerHud .tick{
+    position:absolute;left:50%;top:5px;width:2px;height:9px;margin-left:-1px;
+    background:var(--amber);border-radius:1px;z-index:2;
+  }
+  #steerWheel{
+    position:absolute;inset:8px;transform-origin:50% 50%;
+    will-change:transform;
+  }
+  #steerWheel svg{width:100%;height:100%;display:block;overflow:visible;}
+
+  #driveHud{
+    position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    pointer-events:none;
+  }
+  #modeTag{
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--dim);text-align:center;white-space:nowrap;
+  }
+  #modeTag b{color:var(--text);font-weight:600;}
+  #modeToast{
+    position:absolute;left:50%;top:16%;transform:translateX(-50%);
+    padding:8px 16px;font-size:13px;color:var(--text);text-align:center;
+    opacity:0;transition:opacity .22s ease;pointer-events:none;
+    max-width:min(420px,80vw);line-height:1.35;
+  }
+  #modeToast.show{opacity:1;}
+  body.keysMode #steerHud{display:none;}
+  @media (max-width:700px){
+    #driveHud{transform:translateX(-50%) scale(0.82);transform-origin:bottom center;}
+  }
 
   #startScreen{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, #1a1d21 0%, #0a0b0c 70%);color:var(--text);z-index:100;display:flex;align-items:center;justify-content:center;}
   #startInner{max-width:480px;padding:36px;text-align:left;}
@@ -91,7 +134,30 @@
     <button id="menuBtn">menu</button>
   </div>
 
-  <div id="hint">Esc menu · R reset · C camera · WASD / arrows drive</div>
+  <div id="driveHud">
+    <div id="modeTag"><b>mouse</b> · F wasd</div>
+    <div id="steerHud" aria-hidden="true">
+      <div class="bezel"></div>
+      <div class="tick"></div>
+      <div id="steerWheel">
+        <svg viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="39" fill="none" stroke="#1c1e22" stroke-width="12"/>
+          <circle cx="50" cy="50" r="39" fill="none" stroke="#c8c6c0" stroke-width="2.2"/>
+          <circle cx="50" cy="50" r="33" fill="none" stroke="#3a3d42" stroke-width="1"/>
+          <g stroke="#b7b4ae" stroke-width="3.2" stroke-linecap="round">
+            <line x1="50" y1="50" x2="50" y2="16"/>
+            <line x1="50" y1="50" x2="22" y2="68"/>
+            <line x1="50" y1="50" x2="78" y2="68"/>
+          </g>
+          <circle cx="50" cy="50" r="7.5" fill="#16181b" stroke="#8a8d92" stroke-width="1.4"/>
+          <circle cx="50" cy="14.5" r="3.4" fill="#ffb020"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+  <div id="modeToast" class="panel"></div>
+
+  <div id="hint">Esc menu · F drive mode · R reset · C camera</div>
 </div>
 
 <div id="touchControls">
@@ -113,7 +179,9 @@
     <div class="ctrlgrid">
       <b>W / ↑</b><span>throttle</span>
       <b>S / ↓</b><span>brake &amp; reverse</span>
-      <b>A D / ← →</b><span>steer</span>
+      <b>F</b><span>switch mouse / WASD + arrows</span>
+      <b>Mouse</b><span>steer · right click throttle · left click brake</span>
+      <b>WASD / arrows</b><span>drive in keyboard mode</span>
       <b>C</b><span>cycle camera (chase / cockpit)</span>
       <b>R</b><span>reset onto track</span>
       <b>Esc</b><span>pause / return to menu</span>
@@ -709,11 +777,22 @@ function createKart(ghost){
   const hoopBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.35,6), barMat);
   hoopBrace.rotation.x = Math.PI/2; hoopBrace.position.set(0, 0.95, -0.78); group.add(hoopBrace);
 
-  /* steering wheel */
-  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 12), mat(COL_BAR));
-  wheelRim.rotation.x = Math.PI/2 * 0.85;
-  wheelRim.position.set(0, 0.58, 0.38);
-  group.add(wheelRim);
+  /* steering wheel (spins with analog lock, ~90° each way) */
+  const helmMount = new THREE.Group();
+  helmMount.position.set(0, 0.58, 0.38);
+  helmMount.rotation.x = Math.PI/2 * 0.85;
+  const helm = new THREE.Group();
+  helmMount.add(helm);
+  helm.add(new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 12), mat(COL_BAR)));
+  const spokeH = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.016, 0.016), mat(COL_BAR));
+  helm.add(spokeH);
+  const spokeV = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.11, 0.016), mat(COL_BAR));
+  spokeV.position.y = -0.04;
+  helm.add(spokeV);
+  const helmPip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.022, 0.018), mat(0xffb020));
+  helmPip.position.set(0, 0.14, 0);
+  helm.add(helmPip);
+  group.add(helmMount);
 
   /* driver */
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.26), mat(ghost ? 0x3a6aaa : 0x1a1a1a));
@@ -744,7 +823,7 @@ function createKart(ghost){
     group.traverse(o=>{ if(o.isMesh){ o.material.transparent=true; o.material.opacity=0.30; } });
   }
 
-  return {group, steerFL, steerFR, wheelFL, wheelFR, wheelRL, wheelRR, rF, rR, outerHalfW: outerW*0.5};
+  return {group, steerFL, steerFR, wheelFL, wheelFR, wheelRL, wheelRR, rF, rR, outerHalfW: outerW*0.5, helm};
 }
 
 const kart = createKart(false);
@@ -765,6 +844,9 @@ const P = {
   dragCoeff: 1.5, rollResist: 20,
   steerRateLow: 0.6, steerRateHigh: 0.15, steerSpeedRef: 18,
   steerRate: 6.0,
+  /* Indoor rental karts: ~90° wheel lock each way, ~1:3 to the front wheels. */
+  steerWheelLock: 90 * Math.PI/180,
+  steerMouseSens: 0.002,
   /* Closed black bumper rectangle (matches visual outerW × outerL) */
   kartHalfWidth: KART_BUMPER_W * 0.5,
   kartHalfLength: KART_BUMPER_L * 0.5
@@ -796,7 +878,8 @@ const state = {
   lastLapTime:null, bestLapTime:null,
   currentLapPath: [], bestLapPath: null,
   nextCp: START_WP,
-  gateAlong: new Array(MV).fill(0)
+  gateAlong: new Array(MV).fill(0),
+  wheelPos: 0
 };
 findInitialTrackIndex();
 function findInitialTrackIndex(){
@@ -825,6 +908,7 @@ function resetKart(){
   state.x = p.x; state.z = p.z; state.yaw = p.yaw;
   state.vx=0; state.vz=0; state.r=0; state.steerAngle=0;
   state.slip=0; state.slide=0; state.speed=0;
+  state.wheelPos = 0;
   findInitialTrackIndex();
   state.timing = false;
   state.lapStartTime = 0;
@@ -834,6 +918,7 @@ function resetKart(){
   kart.group.rotation.y = state.yaw;
   kart.steerFL.rotation.y = 0;
   kart.steerFR.rotation.y = 0;
+  kart.helm.rotation.z = 0;
   ghostKart.group.visible = false;
   snapshotGates();
 }
@@ -1040,6 +1125,7 @@ window.addEventListener('keydown', e=>{
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
   if(e.code==='KeyR') resetKart();
   if(e.code==='KeyC') cycleCamera();
+  if(e.code==='KeyF' && !e.repeat){ e.preventDefault(); toggleDriveMode(); }
 });
 window.addEventListener('keyup', e=>{ keys[e.code]=false; });
 
@@ -1062,15 +1148,102 @@ if('ontouchstart' in window || navigator.maxTouchPoints>0){
   document.getElementById('touchControls').style.display='block';
 }
 
+function captureMouse(){
+  if(!running || driveMode!=='mouse') return;
+  if(document.pointerLockElement === canvas) return;
+  if(!canvas.requestPointerLock) return;
+  try{
+    const ret = canvas.requestPointerLock({unadjustedMovement:true});
+    if(ret && typeof ret.catch === 'function'){
+      ret.catch(()=>{ canvas.requestPointerLock(); });
+    }
+  }catch(err){
+    canvas.requestPointerLock();
+  }
+}
+
+function syncPointer(){
+  const mouseOn = running && driveMode === 'mouse';
+  document.body.classList.toggle('playing', mouseOn);
+  document.body.classList.toggle('keysMode', driveMode === 'keys');
+  if(!mouseOn && document.pointerLockElement) document.exitPointerLock();
+  if(mouseOn) captureMouse();
+}
+
+let driveMode = 'mouse';
+const mouseBtn = {gas:false, brake:false};
+let toastTimer = 0;
+const elModeTag = document.getElementById('modeTag');
+const elModeToast = document.getElementById('modeToast');
+
+function updateModeUI(announce){
+  if(driveMode==='mouse'){
+    elModeTag.innerHTML = '<b>mouse</b> · F wasd';
+  } else {
+    elModeTag.innerHTML = '<b>wasd</b> · F mouse';
+  }
+  if(!announce) return;
+  elModeToast.textContent = driveMode==='mouse'
+    ? 'Mouse steering — right click throttle, left click brake'
+    : 'Keyboard — WASD and arrow keys';
+  elModeToast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ elModeToast.classList.remove('show'); }, 1700);
+}
+
+function toggleDriveMode(){
+  driveMode = driveMode==='mouse' ? 'keys' : 'mouse';
+  mouseBtn.gas = false;
+  mouseBtn.brake = false;
+  if(driveMode==='keys') state.wheelPos = 0;
+  syncPointer();
+  updateModeUI(true);
+}
+
+window.addEventListener('pointermove', e=>{
+  if(!running || driveMode!=='mouse') return;
+  if(e.pointerType === 'touch' || e.pointerType === 'pen') return;
+  const dx = e.movementX || 0;
+  if(!dx) return;
+  state.wheelPos = clamp(state.wheelPos - dx * P.steerMouseSens, -1, 1);
+});
+window.addEventListener('mousemove', e=>{
+  if(!running || driveMode!=='mouse') return;
+  if(e.pointerType === 'touch' || e.pointerType === 'pen') return;
+  if(typeof PointerEvent !== 'undefined') return;
+  const dx = e.movementX || 0;
+  if(!dx) return;
+  state.wheelPos = clamp(state.wheelPos - dx * P.steerMouseSens, -1, 1);
+});
+canvas.addEventListener('click', captureMouse);
+
+window.addEventListener('pointerdown', e=>{
+  if(!running || driveMode!=='mouse') return;
+  if(e.pointerType === 'touch' || e.pointerType === 'pen') return;
+  if(e.target && e.target.closest && e.target.closest('button, a, select, #startScreen')) return;
+  if(e.button===0){ mouseBtn.brake = true; e.preventDefault(); }
+  if(e.button===2){ mouseBtn.gas = true; e.preventDefault(); }
+});
+window.addEventListener('pointerup', e=>{
+  if(e.button===0) mouseBtn.brake = false;
+  if(e.button===2) mouseBtn.gas = false;
+});
+window.addEventListener('pointercancel', ()=>{ mouseBtn.gas=false; mouseBtn.brake=false; });
+window.addEventListener('blur', ()=>{ mouseBtn.gas=false; mouseBtn.brake=false; });
+window.addEventListener('contextmenu', e=>{
+  if(running && driveMode==='mouse') e.preventDefault();
+});
+
 function getInput(){
   if(!running) return { steer:0, throttle:0, brake:0 };
+  const mouseOn = driveMode==='mouse';
   const left = keys['ArrowLeft']||keys['KeyA']||touch.left;
   const right = keys['ArrowRight']||keys['KeyD']||touch.right;
-  const gas = keys['ArrowUp']||keys['KeyW']||touch.gas;
-  const brake = keys['ArrowDown']||keys['KeyS']||touch.brake;
+  const gas = keys['ArrowUp']||keys['KeyW']||touch.gas||(mouseOn&&mouseBtn.gas);
+  const brake = keys['ArrowDown']||keys['KeyS']||touch.brake||(mouseOn&&mouseBtn.brake);
+  const keySteer = (left?1:0) - (right?1:0);
   return {
-    /* Positive steer = left (bicycle model / +yaw). A/← left, D/→ right. */
-    steer: (left?1:0) - (right?1:0),
+    steer: mouseOn ? state.wheelPos : keySteer,
     throttle: gas?1:0,
     brake: brake?1:0
   };
@@ -1516,6 +1689,8 @@ const elLastTime=document.getElementById('lastTime');
 const elBestTime=document.getElementById('bestTime');
 const elSpeedVal=document.getElementById('speedval');
 const elRpmFill=document.getElementById('rpmfill');
+const elSteerWheel=document.getElementById('steerWheel');
+const STEER_WHEEL_DEG = 90;
 
 function fmtTime(ms){
   if(ms==null) return '--:--.---';
@@ -1533,6 +1708,7 @@ function updateHUD(nowMs, input){
   elSpeedVal.textContent = Math.round(state.speed*3.6);
   const rpm = clamp(1200 + input.throttle*1800 + Math.abs(state.uLocal||0)*140, 900, 7600);
   elRpmFill.style.width = clamp((rpm-900)/(7600-900)*100,0,100)+'%';
+  elSteerWheel.style.transform = 'rotate(' + (-input.steer * STEER_WHEEL_DEG) + 'deg)';
 }
 
 /* ============================== main loop ============================== */
@@ -1545,6 +1721,10 @@ function openMenu(){
   running = false;
   lastT = null;
   Object.keys(keys).forEach(k=>{ keys[k]=false; });
+  mouseBtn.gas = false;
+  mouseBtn.brake = false;
+  if(document.pointerLockElement) document.exitPointerLock();
+  document.body.classList.remove('playing');
   const btn = document.getElementById('startBtn');
   btn.textContent = 'Resume';
   document.getElementById('startScreen').style.display = 'flex';
@@ -1557,6 +1737,7 @@ function closeMenu(){
   hasStarted = true;
   lastT = null;
   canvas.focus();
+  syncPointer();
 }
 
 function frame(now){
@@ -1594,6 +1775,7 @@ function frame(now){
   kart.wheelRR.rotation.x += rollR*dt;
   kart.steerFL.rotation.y = state.steerAngle;
   kart.steerFR.rotation.y = state.steerAngle;
+  kart.helm.rotation.z = input.steer * P.steerWheelLock;
 
   if(state.timing && state.bestLapPath && state.bestLapPath.length>2){
     const total = state.bestLapPath.length;
