@@ -581,7 +581,7 @@ const trackGroup = new THREE.Group();
 
 /* asphalt */
 const asphaltBase = [0.16,0.165,0.175];
-const road = buildFlatRibbon(-HALF_W, HALF_W, (d)=>{
+const road = buildFlatRibbon(-(HALF_W + 0.10), HALF_W + 0.10, (d)=>{
   const n = (hash01(Math.floor(d*3))-0.5)*0.02;
   return [asphaltBase[0]+n, asphaltBase[1]+n, asphaltBase[2]+n];
 });
@@ -593,10 +593,19 @@ function curbColor(d){ return (Math.floor(d/2)%2===0) ? [0.82,0.08,0.08] : [0.85
 const curbR = buildFlatRibbon(HALF_W, HALF_W+CURB_W, curbColor); curbR.position.y=0.02; trackGroup.add(curbR);
 const curbL = buildFlatRibbon(-HALF_W-CURB_W, -HALF_W, curbColor); curbL.position.y=0.02; trackGroup.add(curbL);
 
+/* runoff between curb and barrier */
+function apronColor(d){
+  const n = (hash01(Math.floor(d*2)+9)-0.5)*0.015;
+  return [0.13+n, 0.135+n, 0.14+n];
+}
+const apronOuter = wallOffset + 0.10;
+const apronR = buildFlatRibbon(HALF_W+CURB_W, apronOuter, apronColor); apronR.position.y=0.012; trackGroup.add(apronR);
+const apronL = buildFlatRibbon(-apronOuter, -HALF_W-CURB_W, apronColor); apronL.position.y=0.012; trackGroup.add(apronL);
+
 /* barrier walls (white/blue every 4m) */
 function wallColor(d){ return (Math.floor(d/4)%2===0) ? [0.22,0.22,0.24] : [0.08,0.08,0.09]; }
-const wallR = buildWallRibbon(wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallR);
-const wallL = buildWallRibbon(-wallOffset, 0.03, WALL_H, wallColor); trackGroup.add(wallL);
+const wallR = buildWallRibbon(wallOffset, 0, WALL_H, wallColor); trackGroup.add(wallR);
+const wallL = buildWallRibbon(-wallOffset, 0, WALL_H, wallColor); trackGroup.add(wallL);
 
 /* underside on elevated / ramp sections */
 (function(){
