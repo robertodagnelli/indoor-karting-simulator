@@ -150,7 +150,7 @@
   </div>
 
   <div id="driveHud">
-    <div id="modeTag"><b>mouse</b> · F wasd</div>
+    <div id="modeTag"><b>wasd</b> · F mouse</div>
     <div id="steerHud" aria-hidden="true">
       <div class="bezel"></div>
       <div class="tick"></div>
@@ -172,7 +172,7 @@
   </div>
   <div id="modeToast" class="panel"></div>
 
-  <div id="hint">Esc menu · F drive mode · Space boost · R reset · C camera</div>
+  <div id="hint">Esc menu · F drive mode · Shift boost · Q/E look · R reset · C camera</div>
 </div>
 
 <div id="touchControls">
@@ -197,7 +197,8 @@
       <b>F</b><span>switch mouse / WASD + arrows</span>
       <b>Mouse</b><span>steer · right click throttle · left click brake</span>
       <b>WASD / arrows</b><span>drive in keyboard mode</span>
-      <b>Space / MMB</b><span>overboost +20% (hold, once per lap)</span>
+      <b>Shift</b><span>overboost +20% (hold, once per lap — Space / MMB also work)</span>
+      <b>Q / E</b><span>look left / right (hold both to look behind)</span>
       <b>C</b><span>cycle camera (chase / cockpit)</span>
       <b>R</b><span>reset onto track</span>
       <b>Esc</b><span>pause / return to menu</span>
@@ -824,11 +825,9 @@ function createKart(ghost){
   group.add(floor);
 
   /* nose / front fairing */
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.28, 0.72), mat(COL_BODY));
-  nose.position.set(0, 0.34, 0.72);
-  group.add(nose);
-  const noseTip = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.28), mat(COL_BODY));
-  noseTip.position.set(0, 0.30, 1.12);
+
+  const noseTip = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.2), mat(COL_BODY));
+  noseTip.position.set(0, 0.30, 0.85);
   group.add(noseTip);
 
   /* white nose accents */
@@ -847,14 +846,11 @@ function createKart(ghost){
   flashL.position.set(0.70, 0.34, 0.15); group.add(flashL);
   const flashR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.60), mat(COL_WHITE));
   flashR.position.set(-0.70, 0.34, 0.15); group.add(flashR);
-  const flashWL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.28), mat(COL_WHITE));
-  flashWL.position.set(0.72, 0.38, -0.15); group.add(flashWL);
-  const flashWR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.28), mat(COL_WHITE));
-  flashWR.position.set(-0.72, 0.38, -0.15); group.add(flashWR);
+
 
   /* center spine / battery cover */
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.18, 0.9), mat(COL_BODY));
-  spine.position.set(0, 0.28, 0.05);
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.40, 1.6), mat(COL_BODY));
+  spine.position.set(0, 0.30, 0);
   group.add(spine);
 
   /* rear deck */
@@ -882,8 +878,6 @@ function createKart(ghost){
   hoopR.position.set(-0.26, 0.78, -0.62); group.add(hoopR);
   const hoopTop = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.58,6), barMat);
   hoopTop.rotation.z = Math.PI/2; hoopTop.position.set(0, 1.12, -0.62); group.add(hoopTop);
-  const hoopBrace = new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.35,6), barMat);
-  hoopBrace.rotation.x = Math.PI/2; hoopBrace.position.set(0, 0.95, -0.78); group.add(hoopBrace);
 
   /* steering wheel (spins with analog lock, ~90° each way) */
   const helmMount = new THREE.Group();
@@ -957,7 +951,7 @@ const P = {
   /* Indoor rental karts: ~90° wheel lock each way, ~1:3 to the front wheels. */
   steerWheelLock: 90 * Math.PI/180,
   steerMouseSens: 0.002,
-  /* Overboost: hold Space / middle mouse. Tune boostMul freely (1.20 = +20%). */
+  /* Overboost: hold Shift (recommended), Space, or middle mouse. Tune boostMul freely. */
   boostMul: 1.20,
   boostDuration: 10,
   /* Closed black bumper rectangle (matches visual outerW × outerL) */
@@ -1291,7 +1285,7 @@ window.addEventListener('keydown', e=>{
   }
   if(!running) return;
   keys[e.code]=true;
-  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD'].includes(e.code)) e.preventDefault();
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','ShiftLeft','ShiftRight'].includes(e.code)) e.preventDefault();
   if(e.code==='KeyR') resetKart();
   if(e.code==='KeyC') cycleCamera();
   if(e.code==='KeyF' && !e.repeat){ e.preventDefault(); toggleDriveMode(); }
@@ -1339,7 +1333,7 @@ function syncPointer(){
   if(mouseOn) captureMouse();
 }
 
-let driveMode = 'mouse';
+let driveMode = 'keys';
 const mouseBtn = {gas:false, brake:false, boost:false};
 let toastTimer = 0;
 const elModeTag = document.getElementById('modeTag');
@@ -1359,6 +1353,7 @@ function updateModeUI(announce){
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>{ elModeToast.classList.remove('show'); }, 1700);
 }
+updateModeUI(false);
 
 function toggleDriveMode(){
   driveMode = driveMode==='mouse' ? 'keys' : 'mouse';
@@ -1370,8 +1365,10 @@ function toggleDriveMode(){
 }
 
 window.addEventListener('pointermove', e=>{
-  if(!running || driveMode!=='mouse') return;
+  if(!running) return;
   if(e.pointerType === 'touch' || e.pointerType === 'pen') return;
+  syncMouseButtons(e);
+  if(driveMode!=='mouse') return;
   const dx = e.movementX || 0;
   if(!dx) return;
   state.wheelPos = clamp(state.wheelPos - dx * P.steerMouseSens, -1, 1);
@@ -1386,19 +1383,24 @@ window.addEventListener('mousemove', e=>{
 });
 canvas.addEventListener('click', captureMouse);
 
+function syncMouseButtons(e){
+  if(typeof e.buttons !== 'number') return;
+  mouseBtn.boost = !!(e.buttons & 4);
+  if(driveMode==='mouse'){
+    mouseBtn.brake = !!(e.buttons & 1);
+    mouseBtn.gas = !!(e.buttons & 2);
+  }
+}
+
 window.addEventListener('pointerdown', e=>{
   if(!running) return;
   if(e.pointerType === 'touch' || e.pointerType === 'pen') return;
   if(e.target && e.target.closest && e.target.closest('button, a, select, #startScreen')) return;
-  if(e.button===1){ mouseBtn.boost = true; e.preventDefault(); return; }
-  if(driveMode!=='mouse') return;
-  if(e.button===0){ mouseBtn.brake = true; e.preventDefault(); }
-  if(e.button===2){ mouseBtn.gas = true; e.preventDefault(); }
+  if(e.button===0 || e.button===1 || e.button===2) e.preventDefault();
+  syncMouseButtons(e);
 });
 window.addEventListener('pointerup', e=>{
-  if(e.button===0) mouseBtn.brake = false;
-  if(e.button===1) mouseBtn.boost = false;
-  if(e.button===2) mouseBtn.gas = false;
+  syncMouseButtons(e);
 });
 window.addEventListener('pointercancel', ()=>{ mouseBtn.gas=false; mouseBtn.brake=false; mouseBtn.boost=false; });
 window.addEventListener('blur', ()=>{ mouseBtn.gas=false; mouseBtn.brake=false; mouseBtn.boost=false; });
@@ -1406,7 +1408,7 @@ window.addEventListener('contextmenu', e=>{
   if(running && driveMode==='mouse') e.preventDefault();
 });
 window.addEventListener('mousedown', e=>{
-  if(e.button===1 && running) e.preventDefault();
+  if((e.button===1 || e.button===2) && running) e.preventDefault();
 }, {passive:false});
 window.addEventListener('auxclick', e=>{
   if(running) e.preventDefault();
@@ -1424,7 +1426,7 @@ function getInput(){
     steer: mouseOn ? state.wheelPos : keySteer,
     throttle: gas?1:0,
     brake: brake?1:0,
-    boost: !!(keys['Space'] || mouseBtn.boost)
+    boost: !!(keys['ShiftLeft']||keys['ShiftRight']||keys['Space']||mouseBtn.boost)
   };
 }
 
@@ -1439,26 +1441,41 @@ document.getElementById('menuBtn').addEventListener('click', openMenu);
 const camPos = new THREE.Vector3(0,4,-8);
 const camLook = new THREE.Vector3(0,0,0);
 let camInit = false;
+let camLookOff = 0;
+
+function getLookOffset(){
+  const left = !!keys['KeyQ'];
+  const right = !!keys['KeyE'];
+  if(left && right) return Math.PI;
+  if(left) return Math.PI/2;
+  if(right) return -Math.PI/2;
+  return 0;
+}
 
 function updateCamera(dt, vis){
   const yaw = vis.yaw, x = vis.x, z = vis.z;
   const y = vis.y || 0;
+  const wantLook = getLookOffset();
+  camLookOff = lerpAngle(camLookOff, wantLook, 1 - Math.exp(-dt*16));
+  const lookYaw = yaw + camLookOff;
   const fX=Math.sin(yaw), fZ=Math.cos(yaw);
+  const lX=Math.sin(lookYaw), lZ=Math.cos(lookYaw);
   const mode = camModes[camModeIdx];
   let targetPos, targetLook, targetFov;
 
   if(mode==='chase'){
-    targetPos = new THREE.Vector3(x - fX*4.0, y + 1.85, z - fZ*4.0);
-    targetLook = new THREE.Vector3(x + fX*2.4, y + 0.75, z + fZ*2.4);
+    targetPos = new THREE.Vector3(x - lX*4.0, y + 1.85, z - lZ*4.0);
+    targetLook = new THREE.Vector3(x + lX*2.4, y + 0.75, z + lZ*2.4);
     targetFov = 58 + clamp(state.speed*0.35, 0, 4);
   } else {
     targetPos = new THREE.Vector3(x + fX*0.05, y + 0.98, z + fZ*0.05);
-    targetLook = new THREE.Vector3(x + fX*10, y + 0.85, z + fZ*10);
+    targetLook = new THREE.Vector3(x + lX*10, y + 0.85, z + lZ*10);
     targetFov = 68 + clamp(state.speed*0.4, 0, 5);
   }
 
   if(!camInit){ camPos.copy(targetPos); camLook.copy(targetLook); camInit=true; }
-  const k = 1 - Math.exp(-dt*(mode==='cockpit'?12:6));
+  const looking = Math.abs(camLookOff) > 0.02;
+  const k = 1 - Math.exp(-dt*(looking ? 14 : (mode==='cockpit'?12:6)));
   camPos.lerp(targetPos, k);
   camLook.lerp(targetLook, k);
   camera.position.copy(camPos);
