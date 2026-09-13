@@ -55,7 +55,7 @@
     width:108px;height:108px;pointer-events:none;margin:0 auto;
   }
   #steerHud .bezel{
-    position:absolute;inset:0;border-radius:50%;
+    position:absolute;inset:0;border-radius:12px;
     border:1px solid rgba(255,255,255,0.12);
     background:rgba(12,14,16,0.55);
     box-shadow:0 4px 16px rgba(0,0,0,0.35);
@@ -156,16 +156,11 @@
       <div class="tick"></div>
       <div id="steerWheel">
         <svg viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="39" fill="none" stroke="#1c1e22" stroke-width="12"/>
-          <circle cx="50" cy="50" r="39" fill="none" stroke="#c8c6c0" stroke-width="2.2"/>
-          <circle cx="50" cy="50" r="33" fill="none" stroke="#3a3d42" stroke-width="1"/>
-          <g stroke="#b7b4ae" stroke-width="3.2" stroke-linecap="round">
-            <line x1="50" y1="50" x2="50" y2="16"/>
-            <line x1="50" y1="50" x2="22" y2="68"/>
-            <line x1="50" y1="50" x2="78" y2="68"/>
-          </g>
-          <circle cx="50" cy="50" r="7.5" fill="#16181b" stroke="#8a8d92" stroke-width="1.4"/>
-          <circle cx="50" cy="14.5" r="3.4" fill="#ffb020"/>
+          <rect x="18" y="30" width="64" height="40" rx="2.5" fill="none" stroke="#1c1e22" stroke-width="10"/>
+          <rect x="18" y="30" width="64" height="40" rx="2.5" fill="none" stroke="#c8c6c0" stroke-width="2.2"/>
+          <line x1="50" y1="35" x2="50" y2="65" stroke="#b7b4ae" stroke-width="3.2" stroke-linecap="round"/>
+          <rect x="46.5" y="46.5" width="7" height="7" fill="#16181b" stroke="#8a8d92" stroke-width="1.2"/>
+          <rect x="47.5" y="26" width="5" height="5" rx="0.6" fill="#ffb020"/>
         </svg>
       </div>
     </div>
@@ -772,139 +767,111 @@ scene.add(ceiling);
 const KART_BUMPER_W = 1.72;
 const KART_BUMPER_L = 2.35;
 
+function makeNumberPlateMap(){
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#141414';
+  ctx.fillRect(0,0,128,128);
+  ctx.fillStyle = '#f3f3f1';
+  ctx.font = 'bold 70px Arial, Helvetica, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('10', 64, 70);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function createKart(ghost){
   const group = new THREE.Group();
   const matOpts = ghost
     ? {transparent:true, opacity:0.32, flatShading:true, roughness:0.85}
-    : {flatShading:true, roughness:0.82, metalness:0.08};
+    : {flatShading:true, roughness:0.8, metalness:0.06};
   function mat(c, extra){ return new THREE.MeshStandardMaterial(Object.assign({color:c}, matOpts, extra||{})); }
-
-  const COL_BODY = ghost ? 0x2a4a7a : 0xd61f1f;
-  const COL_ACCENT = ghost ? 0x5a9dff : 0xd61f1f;
-  const COL_WHITE = ghost ? 0xa8c8ef : 0xf2f2f0;
-  const COL_BUMP = ghost ? 0x1a3050 : 0x0a0a0a;
-  const COL_SEAT = ghost ? 0x203040 : 0x141414;
-  const COL_BAR = ghost ? 0x304860 : 0x1c1c1c;
-  const COL_TIRE = 0x111111;
-  const COL_FLOOR = ghost ? 0x1a3050 : 0x111111;
-  const COL_HELMET = ghost ? 0x5a9dff : 0xd61f1f;
-
-  /* --- continuous closed bumper ring (tires sit inside) --- */
-  const bumpH = 0.22, bumpY = 0.20;
-  const outerW = KART_BUMPER_W, outerL = KART_BUMPER_L;
-  const bumpT = 0.14;
-
-  const bumpF = new THREE.Mesh(new THREE.BoxGeometry(outerW, bumpH, bumpT), mat(COL_BUMP));
-  bumpF.position.set(0, bumpY, outerL*0.5 - bumpT*0.5);
-  group.add(bumpF);
-  const bumpR = new THREE.Mesh(new THREE.BoxGeometry(outerW, bumpH, bumpT), mat(COL_BUMP));
-  bumpR.position.set(0, bumpY, -outerL*0.5 + bumpT*0.5);
-  group.add(bumpR);
-  const sideLen = outerL - bumpT*2;
-  const bumpSL = new THREE.Mesh(new THREE.BoxGeometry(bumpT, bumpH, sideLen), mat(COL_BUMP));
-  bumpSL.position.set(outerW*0.5 - bumpT*0.5, bumpY, 0);
-  group.add(bumpSL);
-  const bumpSR = new THREE.Mesh(new THREE.BoxGeometry(bumpT, bumpH, sideLen), mat(COL_BUMP));
-  bumpSR.position.set(-outerW*0.5 + bumpT*0.5, bumpY, 0);
-  group.add(bumpSR);
-
-  /* LED headlight strips */
-  if(!ghost){
-    const ledMat = mat(0xffffff, {emissive:0xffffff, emissiveIntensity:1.6, roughness:0.4});
-    const ledL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.04), ledMat);
-    ledL.position.set(0.38, bumpY+0.02, outerL*0.5 - 0.02);
-    group.add(ledL);
-    const ledR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.04), ledMat);
-    ledR.position.set(-0.38, bumpY+0.02, outerL*0.5 - 0.02);
-    group.add(ledR);
+  function addBox(w,h,d, col, x,y,z){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(col));
+    m.position.set(x,y,z);
+    group.add(m);
+    return m;
   }
 
-  /* floor pan */
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(outerW - bumpT*2.2, 0.05, outerL - bumpT*2.2), mat(COL_FLOOR));
-  floor.position.set(0, 0.08, 0);
-  group.add(floor);
+  const COL_BODY = ghost ? 0x2a4a7a : 0xe20e16;
+  const COL_WHITE = ghost ? 0xa8c8ef : 0xf4f4f2;
+  const COL_BUMP = ghost ? 0x1a3050 : 0x111111;
+  const COL_SEAT = ghost ? 0x203040 : 0x161616;
+  const COL_BAR = ghost ? 0x304860 : 0x1a1a1a;
+  const COL_TIRE = 0x111111;
+  const COL_FLOOR = ghost ? 0x1a3050 : 0x0d0d0d;
+  const COL_HELMET = ghost ? 0x5a9dff : 0x1a1a1a;
+  const COL_SHIRT = ghost ? 0x3a6aaa : 0x1c1c1c;
 
-  /* nose / front fairing */
+  const outerW = KART_BUMPER_W, outerL = KART_BUMPER_L;
+  const bumpT = 0.14, bumpH = 0.20, bumpY = 0.19;
+  const sideLen = outerL - bumpT*2;
 
-  const noseTip = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.2), mat(COL_BODY));
-  noseTip.position.set(0, 0.30, 0.85);
-  group.add(noseTip);
+  addBox(outerW - bumpT*2, 0.04, outerL - bumpT*2, COL_FLOOR, 0, 0.08, 0);
 
-  /* white nose accents */
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.04, 0.55), mat(COL_WHITE));
-  stripe.position.set(0, 0.49, 0.70);
-  group.add(stripe);
-  const stripeW = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 0.40), mat(COL_WHITE));
-  stripeW.position.set(0, 0.505, 0.72);
-  group.add(stripeW);
+  addBox(outerW, bumpH, bumpT, COL_BUMP, 0, bumpY,  outerL*0.5 - bumpT*0.5);
+  addBox(outerW, bumpH, bumpT, COL_BUMP, 0, bumpY, -outerL*0.5 + bumpT*0.5);
+  addBox(bumpT, bumpH, sideLen, COL_BUMP,  outerW*0.5 - bumpT*0.5, bumpY, 0);
+  addBox(bumpT, bumpH, sideLen, COL_BUMP, -outerW*0.5 + bumpT*0.5, bumpY, 0);
 
-  /* side pods covering wheels */
-  const podGeo = new THREE.BoxGeometry(0.28, 0.26, 1.05);
-  const podL = new THREE.Mesh(podGeo, mat(COL_BODY)); podL.position.set(0.58, 0.30, 0.05); group.add(podL);
-  const podR = new THREE.Mesh(podGeo, mat(COL_BODY)); podR.position.set(-0.58, 0.30, 0.05); group.add(podR);
-  const flashL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.60), mat(COL_WHITE));
-  flashL.position.set(0.70, 0.34, 0.15); group.add(flashL);
-  const flashR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.60), mat(COL_WHITE));
-  flashR.position.set(-0.70, 0.34, 0.15); group.add(flashR);
+  /* sloped nose: low between the front wheels, up to the steering wheel */
+  const hood = new THREE.Group();
+  hood.position.set(0, 0.4, 0.65);
+  hood.rotation.x = 0.3;
+  group.add(hood);
+  hood.add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.7), mat(COL_BODY)));
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.6), mat(COL_WHITE));
+  stripe.position.set(0, 0.045, 0);
+  hood.add(stripe);
+  // side body
+  addBox(0.22, 0.22, 1.1, COL_BODY,  0.6, 0.3, 0);
+  addBox(0.22, 0.22, 1.1, COL_BODY, -0.6, 0.3, 0);
 
+  // center body
+  addBox(1, 0.22, 2, COL_BODY, 0, 0.3, 0);
 
-  /* center spine / battery cover */
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.40, 1.6), mat(COL_BODY));
-  spine.position.set(0, 0.30, 0);
-  group.add(spine);
+  // seat
+  addBox(0.40, 0.10, 0.36, COL_SEAT, 0, 0.32, -0.26);
+  addBox(0.40, 0.6, 0.10, COL_SEAT, 0, 0.51, -0.44);
 
-  /* rear deck */
-  const rearDeck = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.16, 0.45), mat(COL_BODY));
-  rearDeck.position.set(0, 0.30, -0.75);
-  group.add(rearDeck);
-
-  /* bucket seat */
-  const seatBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.42), mat(COL_SEAT));
-  seatBase.position.set(0, 0.36, -0.28);
-  group.add(seatBase);
-  const seatBack = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.52, 0.12), mat(COL_SEAT));
-  seatBack.position.set(0, 0.62, -0.48);
-  group.add(seatBack);
-  const seatSideL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.38), mat(COL_SEAT));
-  seatSideL.position.set(0.23, 0.48, -0.32); group.add(seatSideL);
-  const seatSideR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, 0.38), mat(COL_SEAT));
-  seatSideR.position.set(-0.23, 0.48, -0.32); group.add(seatSideR);
-
-  /* roll hoop */
-  const barMat = mat(COL_BAR);
-  const hoopL = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.72,6), barMat);
-  hoopL.position.set(0.26, 0.78, -0.62); group.add(hoopL);
-  const hoopR = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.72,6), barMat);
-  hoopR.position.set(-0.26, 0.78, -0.62); group.add(hoopR);
-  const hoopTop = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.58,6), barMat);
-  hoopTop.rotation.z = Math.PI/2; hoopTop.position.set(0, 1.12, -0.62); group.add(hoopTop);
-
-  /* steering wheel (spins with analog lock, ~90° each way) */
+  /* rectangular wheel, tilted toward the driver */
   const helmMount = new THREE.Group();
-  helmMount.position.set(0, 0.58, 0.38);
-  helmMount.rotation.x = Math.PI/2 * 0.85;
+  helmMount.position.set(0, 0.56, 0.20);
+  helmMount.rotation.x = 0.72;
   const helm = new THREE.Group();
   helmMount.add(helm);
-  helm.add(new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.022, 6, 12), mat(COL_BAR)));
-  const spokeH = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.016, 0.016), mat(COL_BAR));
-  helm.add(spokeH);
-  const spokeV = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.11, 0.016), mat(COL_BAR));
-  spokeV.position.y = -0.04;
-  helm.add(spokeV);
-  const helmPip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.022, 0.018), mat(0xffb020));
-  helmPip.position.set(0, 0.14, 0);
-  helm.add(helmPip);
+  const hw = 0.30, hh = 0.18, ht = 0.024;
+  function helmBar(w,h,d, x,y){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat(COL_BAR));
+    b.position.set(x,y,0);
+    helm.add(b);
+  }
+  helmBar(hw, ht, ht, 0,  hh*0.5);
+  helmBar(hw, ht, ht, 0, -hh*0.5);
+  helmBar(ht, hh, ht,  hw*0.5, 0);
+  helmBar(ht, hh, ht, -hw*0.5, 0);
+  helmBar(ht, hh*0.72, ht, 0, 0);
   group.add(helmMount);
 
-  /* driver */
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.26), mat(ghost ? 0x3a6aaa : 0x1a1a1a));
-  torso.position.set(0, 0.68, -0.22);
-  group.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), mat(COL_HELMET));
-  head.position.set(0, 0.96, -0.20);
+  addBox(0.28, 0.32, 0.22, COL_SHIRT, 0, 0.60, -0.22);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), mat(COL_HELMET));
+  head.position.set(0, 0.88, -0.20);
   group.add(head);
 
-  /* smaller tires tucked inside bodywork */
+  function addArm(x0,y0,z0, x1,y1,z1){
+    const dir = new THREE.Vector3(x1-x0, y1-y0, z1-z0);
+    const len = dir.length();
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.055, len), mat(COL_SHIRT));
+    arm.position.set((x0+x1)*0.5, (y0+y1)*0.5, (z0+z1)*0.5);
+    arm.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), dir.normalize());
+    group.add(arm);
+  }
+  addArm( 0.14, 0.58, -0.16,  0.13, 0.54, 0.18);
+  addArm(-0.14, 0.58, -0.16, -0.13, 0.54, 0.18);
+
   function makeWheel(r,w,c){
     const g = new THREE.CylinderGeometry(r,r,w,10);
     g.rotateZ(Math.PI/2);
@@ -917,7 +884,6 @@ function createKart(ghost){
   const wheelFL = makeWheel(rF,wF,COL_TIRE); steerFL.add(wheelFL); group.add(steerFL);
   const steerFR = new THREE.Group(); steerFR.position.set(-track, rF, Lf);
   const wheelFR = makeWheel(rF,wF,COL_TIRE); steerFR.add(wheelFR); group.add(steerFR);
-
   const wheelRL = makeWheel(rR,wR,COL_TIRE); wheelRL.position.set(track, rR, -Lr); group.add(wheelRL);
   const wheelRR = makeWheel(rR,wR,COL_TIRE); wheelRR.position.set(-track, rR, -Lr); group.add(wheelRR);
 
@@ -948,8 +914,8 @@ const P = {
   dragCoeff: 1.5, rollResist: 20,
   steerRateLow: 0.6, steerRateHigh: 0.15, steerSpeedRef: 18,
   steerRate: 6.0,
-  /* Indoor rental karts: ~90° wheel lock each way, ~1:3 to the front wheels. */
-  steerWheelLock: 90 * Math.PI/180,
+  /* Visual helm / mouse HUD lock only — does not change tyre steer. */
+  steerWheelLock: 70 * Math.PI/180,
   steerMouseSens: 0.002,
   /* Overboost: hold Shift (recommended), Space, or middle mouse. Tune boostMul freely. */
   boostMul: 1.20,
@@ -1891,7 +1857,7 @@ const elSteerWheel=document.getElementById('steerWheel');
 const elBoostBox=document.getElementById('boostbox');
 const elBoostVal=document.getElementById('boostVal');
 const elBoostFill=document.getElementById('boostfill');
-const STEER_WHEEL_DEG = 90;
+const STEER_WHEEL_DEG = P.steerWheelLock * 180 / Math.PI;
 
 function fmtTime(ms){
   if(ms==null) return '--:--.---';
@@ -2018,7 +1984,7 @@ function frame(now){
   kart.wheelRR.rotation.x += rollR*dt;
   kart.steerFL.rotation.y = visPose.steerAngle;
   kart.steerFR.rotation.y = visPose.steerAngle;
-  kart.helm.rotation.z = input.steer * P.steerWheelLock;
+  kart.helm.rotation.z = -input.steer * P.steerWheelLock;
 
   if(state.timing && state.bestLapPath && state.bestLapPath.length>2){
     const total = state.bestLapPath.length;
