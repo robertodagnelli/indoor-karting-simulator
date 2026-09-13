@@ -19,7 +19,7 @@
     sampleSpacing: 0.85,
     filletTarget: 11,
     straightAng: 6 * Math.PI / 180,
-    levelH: 5.5
+    levelH: 5.0
   };
 
   function emptyPath(halfW, wallOffset) {

@@ -84,8 +84,8 @@
   <main>
     <canvas id="canvas"></canvas>
     <div class="help">
-      <kbd>Click</kbd> ground · <kbd>Ctrl</kbd>+click upper floor · <kbd>Drag</kbd> move ·
-      <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove · <kbd>Scroll</kbd> zoom · <kbd>Space</kbd>+drag pan
+      <kbd>Click</kbd> ground · <kbd>Ctrl</kbd>+click upper floor · <kbd>Click segment</kbd> insert ·
+      <kbd>Drag</kbd> move · <kbd>Right-click</kbd> / <kbd>Delete</kbd> remove · <kbd>Scroll</kbd> zoom · <kbd>Space</kbd>+drag pan
     </div>
   </main>
 </div>
@@ -174,6 +174,32 @@ function hitPoint(sx, sy, rad){
     if(Math.hypot(m.x - sx, m.y - sy) <= rad) return i;
   }
   return -1;
+}
+
+function distToSeg(px, py, x1, y1, x2, y2){
+  const dx=x2-x1, dy=y2-y1;
+  const len2=dx*dx+dy*dy;
+  if(len2 < 1e-8) return { d: Math.hypot(px-x1, py-y1), t: 0 };
+  const t = Math.max(0, Math.min(1, ((px-x1)*dx + (py-y1)*dy) / len2));
+  return { d: Math.hypot(px-(x1+dx*t), py-(y1+dy*t)), t };
+}
+
+/* Returns segment start index, or -1. Closed loop if ≥3 points. */
+function hitSegment(sx, sy, maxDist){
+  maxDist = maxDist == null ? 8 : maxDist;
+  const n = points.length;
+  if(n < 2) return -1;
+  const segs = n >= 3 ? n : n-1;
+  let best = -1, bestD = maxDist, bestT = 0.5;
+  for(let i=0;i<segs;i++){
+    const a = w2s(points[i].x, points[i].z);
+    const b = w2s(points[(i+1)%n].x, points[(i+1)%n].z);
+    const hit = distToSeg(sx, sy, a.x, a.y, b.x, b.y);
+    if(hit.d < bestD && hit.t > 0.06 && hit.t < 0.94){
+      bestD = hit.d; best = i; bestT = hit.t;
+    }
+  }
+  return best < 0 ? null : { i: best, t: bestT };
 }
 
 function drawGrid(){
@@ -458,6 +484,23 @@ canvas.addEventListener('pointerdown', e=>{
       return;
     }
     drag = { kind: 'point', idx: i };
+    draw();
+    return;
+  }
+  const seg = hitSegment(p.x, p.y);
+  if(seg){
+    const a = points[seg.i];
+    const b = points[(seg.i+1)%points.length];
+    const as = w2s(a.x, a.z), bs = w2s(b.x, b.z);
+    const mx = as.x + (bs.x-as.x)*seg.t;
+    const my = as.y + (bs.y-as.y)*seg.t;
+    const w = s2w(mx, my);
+    const level = upper ? 1 : ((a.level && b.level) ? 1 : 0);
+    const idx = seg.i + 1;
+    points.splice(idx, 0, { x: snap(w.x), z: snap(w.z), level });
+    selected = idx;
+    drag = { kind: 'point', idx: selected, moved: false };
+    viewFitted = false;
     draw();
     return;
   }
