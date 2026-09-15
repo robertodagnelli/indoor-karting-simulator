@@ -18,11 +18,15 @@
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:3px;backdrop-filter:blur(3px);color:var(--text);}
 
   #hud{position:fixed;inset:0;pointer-events:none;z-index:10;font-variant-numeric:tabular-nums;}
-  #timing{position:absolute;top:14px;left:14px;padding:10px 14px;min-width:150px;}
+  #timing{position:absolute;top:14px;left:14px;padding:10px 14px;min-width:168px;}
   #timing .row{display:flex;justify-content:space-between;gap:18px;font-size:13px;color:var(--dim);margin:2px 0;}
   #timing .row span.val{color:var(--text);}
   #timing .row.best span.val{color:var(--green);}
   #timing .lapnum{font-size:12px;color:var(--dim);margin-bottom:6px;letter-spacing:.02em;}
+  #sessionLabel{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:4px;}
+  #sessionLabel.practice{color:var(--dim);}
+  #lapLine{font-size:13px;color:var(--text);margin-bottom:6px;letter-spacing:.04em;}
+  #lapLine .dim{color:var(--dim);font-size:12px;}
 
   #speedbox{position:absolute;left:14px;bottom:14px;padding:10px 16px;}
   #speedval{font-size:44px;line-height:1;color:var(--amber);font-weight:600;}
@@ -43,6 +47,14 @@
 
   #minimapWrap{position:absolute;top:14px;right:14px;padding:6px;}
   #minimap{display:block;width:200px;height:200px;border-radius:2px;}
+  #floorTag{
+    position:absolute;left:10px;bottom:10px;
+    font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+    color:rgba(231,230,226,0.72);pointer-events:none;display:none;
+    text-shadow:0 1px 2px rgba(0,0,0,0.8);
+  }
+  #floorTag.show{display:block;}
+  #floorTag.upper{color:#7ad4ff;}
 
   #topRightBtns{position:absolute;top:222px;right:14px;display:flex;gap:6px;pointer-events:auto;}
   #topRightBtns button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:3px;min-width:40px;height:32px;padding:0 8px;font-family:var(--mono);font-size:11px;cursor:pointer;}
@@ -92,23 +104,66 @@
     #driveHud{transform:translateX(-50%) scale(0.82);transform-origin:bottom center;}
   }
 
-  #startScreen{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, #1a1d21 0%, #0a0b0c 70%);color:var(--text);z-index:100;display:flex;align-items:center;justify-content:center;}
-  #startInner{max-width:480px;padding:36px;text-align:left;}
-  #startInner h1{font-size:26px;margin:0 0 6px 0;font-weight:600;letter-spacing:-0.01em;}
-  #startInner p.sub{color:var(--dim);margin:0 0 22px 0;font-size:13px;line-height:1.5;}
+  #startScreen,#resultsScreen{
+    position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, #1a1d21 0%, #0a0b0c 70%);
+    color:var(--text);z-index:100;display:flex;align-items:center;justify-content:center;
+    overflow:auto;padding:24px 12px;
+  }
+  #resultsScreen{z-index:110;display:none;}
+  #startInner,#resultsInner{max-width:760px;width:min(760px,96vw);padding:28px 32px;text-align:left;}
+  #startInner h1,#resultsInner h1{font-size:26px;margin:0 0 6px 0;font-weight:600;letter-spacing:-0.01em;}
+  #startInner p.sub,#resultsInner p.sub{color:var(--dim);margin:0 0 22px 0;font-size:13px;line-height:1.5;}
+  .startGrid{display:grid;grid-template-columns:1fr 220px;gap:8px 28px;align-items:start;margin-bottom:18px;}
+  @media (max-width:680px){ .startGrid{grid-template-columns:1fr;} }
   .ctrlgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12.5px;color:var(--dim);margin-bottom:24px;}
   .ctrlgrid b{color:var(--text);font-weight:600;}
-  #startBtn{background:var(--amber);color:#1a1200;border:none;border-radius:3px;padding:13px 26px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.02em;}
-  #startBtn:active{transform:translateY(1px);}
-  #startInner .foot{margin-top:14px;font-size:11px;color:#666;}
-  .trackPick{display:flex;align-items:center;gap:10px;margin:0 0 18px 0;flex-wrap:wrap;}
-  .trackPick label{font-size:12px;color:var(--dim);}
+  .startActions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  #startBtn,.ghostBtn,#resultsBtn{
+    border:none;border-radius:3px;padding:13px 22px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.02em;
+  }
+  #startBtn{background:var(--amber);color:#1a1200;}
+  #startBtn:active,.ghostBtn:active,#resultsBtn:active{transform:translateY(1px);}
+  .ghostBtn,#resultsBtn{background:#121417;color:var(--text);border:1px solid var(--border);}
+  #startInner .foot,#resultsInner .foot{margin-top:14px;font-size:11px;color:#666;}
+  .trackPick{display:flex;align-items:center;gap:10px;margin:0 0 14px 0;flex-wrap:wrap;}
+  .trackPick label,.fieldLabel{font-size:12px;color:var(--dim);display:block;margin:0 0 6px 0;}
   .trackPick select{
     flex:1;min-width:160px;background:#121417;border:1px solid var(--border);color:var(--text);
     border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;
   }
   .trackPick a.editorLink{font-size:11px;color:var(--amber);text-decoration:none;}
   .trackPick a.editorLink:hover{text-decoration:underline;}
+  .seg{display:flex;gap:6px;margin:0 0 14px 0;}
+  .seg button{
+    flex:1;background:#121417;border:1px solid var(--border);color:var(--dim);
+    border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;cursor:pointer;
+  }
+  .seg button.on{background:rgba(255,176,32,0.18);border-color:var(--amber);color:var(--text);}
+  #lapPickWrap{display:none;}
+  #lapPickWrap.show{display:block;}
+  #previewWrap{background:#0c0e11;border:1px solid var(--border);border-radius:3px;padding:8px;}
+  #trackPreview{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:2px;background:#0c0e11;}
+  #previewLegend{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:8px;font-size:10px;color:var(--dim);}
+  #previewLegend i{display:inline-block;width:8px;height:8px;border-radius:1px;margin-right:5px;vertical-align:middle;}
+  #previewLegend .g{background:#c8c6c0;} #previewLegend .u{background:#5ad4ff;} #previewLegend .r{background:#3a7adf;}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px 16px;margin:0 0 18px 0;}
+  .statgrid .box{background:#121417;border:1px solid var(--border);border-radius:3px;padding:10px 12px;}
+  .statgrid .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
+  .statgrid .v{font-size:16px;color:var(--text);}
+  .statgrid .v.best{color:var(--green);}
+  #lapTable{width:100%;border-collapse:collapse;font-size:13px;margin:0 0 18px 0;}
+  #lapTable th{text-align:left;color:var(--dim);font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--border);}
+  #lapTable td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,0.06);}
+  #lapTable tr.best td{color:var(--green);}
+  #historyList{display:flex;flex-direction:column;gap:8px;margin:0 0 18px 0;max-height:48vh;overflow:auto;}
+  .histItem{
+    display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;
+    background:#121417;border:1px solid var(--border);border-radius:3px;padding:10px 12px;cursor:pointer;text-align:left;width:100%;
+    font-family:var(--mono);color:var(--text);font-size:12px;
+  }
+  .histItem:hover{border-color:var(--amber);}
+  .histItem .meta{color:var(--dim);font-size:11px;margin-top:3px;}
+  .histEmpty{color:var(--dim);font-size:13px;padding:18px 0;}
 
   #touchControls{position:fixed;inset:0;z-index:20;pointer-events:none;display:none;}
   .tbtn{position:absolute;pointer-events:auto;border-radius:50%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);color:#fff;font-size:22px;display:flex;align-items:center;justify-content:center;-webkit-user-select:none;user-select:none;}
@@ -126,10 +181,12 @@
 
 <div id="hud">
   <div id="timing" class="panel">
-    <div class="lapnum">lap <span id="lapCount">1</span></div>
+    <div id="sessionLabel" class="practice">Free practice</div>
+    <div id="lapLine">lap <span id="lapCount">1</span></div>
     <div class="row"><span>current</span><span class="val" id="curTime">0:00.000</span></div>
     <div class="row"><span>last lap</span><span class="val" id="lastTime">--:--.---</span></div>
     <div class="row best"><span>best lap</span><span class="val" id="bestTime">--:--.---</span></div>
+    <div class="row" id="totalRow" style="display:none"><span>total</span><span class="val" id="totalTime">--:--.---</span></div>
   </div>
 
   <div id="speedbox" class="panel">
@@ -141,7 +198,10 @@
     </div>
   </div>
 
-  <div id="minimapWrap" class="panel"><canvas id="minimap" width="200" height="200"></canvas></div>
+  <div id="minimapWrap" class="panel">
+    <canvas id="minimap" width="200" height="200"></canvas>
+    <div id="floorTag">Ground</div>
+  </div>
   <button id="muteBtn" title="mute">🔊</button>
   <div id="topRightBtns">
     <button id="camBtn">cam</button>
@@ -181,10 +241,35 @@
   <div id="startInner">
     <h1>Indoor Line</h1>
     <p class="sub">A low-poly indoor kart circuit for practicing braking points, apexes and throttle control. Arcade-friendly handling with speed-sensitive steering — focused on learning lines, not managing balance.</p>
-    <div class="trackPick">
-      <label for="trackSelect">Circuit</label>
-      <select id="trackSelect"></select>
-      <a class="editorLink" id="editorLink" href="track_editor.html">edit tracks</a>
+    <div class="startGrid">
+      <div>
+        <div class="trackPick">
+          <label for="trackSelect">Circuit</label>
+          <select id="trackSelect"></select>
+          <a class="editorLink" id="editorLink" href="track_editor.html">edit tracks</a>
+        </div>
+        <label class="fieldLabel">Mode</label>
+        <div class="seg" id="modePick">
+          <button type="button" data-mode="practice" class="on">Free practice</button>
+          <button type="button" data-mode="race">Race</button>
+        </div>
+        <div id="lapPickWrap">
+          <label class="fieldLabel">Race length</label>
+          <div class="seg" id="lapPick">
+            <button type="button" data-laps="3" class="on">3 laps</button>
+            <button type="button" data-laps="5">5 laps</button>
+            <button type="button" data-laps="10">10 laps</button>
+          </div>
+        </div>
+      </div>
+      <div id="previewWrap">
+        <canvas id="trackPreview" width="400" height="400"></canvas>
+        <div id="previewLegend">
+          <span><i class="g"></i>Ground</span>
+          <span><i class="u"></i>Upper</span>
+          <span><i class="r"></i>Ramp</span>
+        </div>
+      </div>
     </div>
     <div class="ctrlgrid">
       <b>W / ↑</b><span>throttle</span>
@@ -198,12 +283,44 @@
       <b>R</b><span>reset onto track</span>
       <b>Esc</b><span>pause / return to menu</span>
     </div>
-    <button id="startBtn">Start engine</button>
-    <div class="foot">Runs entirely in-browser. Your best lap is kept as a ghost to race against.</div>
+    <div class="startActions">
+      <button id="startBtn">Start engine</button>
+      <button type="button" id="resultsBtn" class="ghostBtn">Race results</button>
+    </div>
+    <div class="foot" id="startFoot">Runs entirely in-browser. Your best lap is kept as a ghost to race against.</div>
+  </div>
+</div>
+
+<div id="resultsScreen">
+  <div id="resultsInner">
+    <div id="resultsListView">
+      <h1>Race results</h1>
+      <p class="sub">Saved races from this browser. Open one to review lap times and stats.</p>
+      <div id="historyList"></div>
+      <div class="startActions">
+        <button type="button" id="historyBackBtn" class="ghostBtn">Back to menu</button>
+      </div>
+    </div>
+    <div id="resultsDetailView" style="display:none">
+      <h1 id="resultsTitle">Race finished</h1>
+      <p class="sub" id="resultsSub"></p>
+      <div class="statgrid" id="resultsStats"></div>
+      <table id="lapTable">
+        <thead>
+          <tr><th>Lap</th><th>Time</th><th>Gap to best</th></tr>
+        </thead>
+        <tbody id="lapTableBody"></tbody>
+      </table>
+      <div class="startActions">
+        <button type="button" id="resultsMenuBtn" class="ghostBtn">Back to menu</button>
+        <button type="button" id="resultsListBtn" class="ghostBtn">All results</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="track_lib.js"></script>
 <script src="tracks_store.js"></script>
 <script>
 (async function(){
@@ -219,6 +336,7 @@ function lerpAngle(a,b,t){
   return a + d*t;
 }
 function hash01(i){ const x=Math.sin(i*12.9898)*43758.5453; return x-Math.floor(x); }
+const LEVEL_H = 5.0;                      /* upper deck height (m) */
 
 /* ============================== renderer / scene ============================== */
 const canvas = document.getElementById('c');
@@ -266,13 +384,139 @@ trackSelect.value = activeTrack.id;
 editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
 if(activeTrack.name) document.title = activeTrack.name + ' — Indoor Line';
 
-trackSelect.addEventListener('change', ()=>{
+const SETTINGS_KEY = 'gokart.sessionSettings.v1';
+const RESULTS_KEY = 'gokart.raceResults.v1';
+let gameMode = 'practice';
+let raceLapsChoice = 3;
+(function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if(s && (s.mode==='practice' || s.mode==='race')) gameMode = s.mode;
+    if(s && (s.raceLaps===3 || s.raceLaps===5 || s.raceLaps===10)) raceLapsChoice = s.raceLaps;
+  }catch(e){}
+})();
+function saveSettings(){
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify({mode:gameMode, raceLaps:raceLapsChoice})); }catch(e){}
+}
+
+function classifyHeight(y){
+  y = y||0;
+  if(y >= LEVEL_H * 0.55) return 'upper';
+  if(y <= LEVEL_H * 0.45) return 'ground';
+  return 'ramp';
+}
+
+function makeMapView(minX, maxX, minZ, maxZ, size, pad){
+  pad = pad==null ? 16 : pad;
+  const spanX = Math.max(1, maxX-minX), spanZ = Math.max(1, maxZ-minZ);
+  const scale = (size - pad*2) / Math.max(spanX, spanZ);
+  const spanPxX = spanX*scale, spanPxZ = spanZ*scale;
+  return {
+    minX, minZ, scale,
+    offX: (size-spanPxX)/2,
+    offZ: (size-spanPxZ)/2
+  };
+}
+function projMap(view, x, z){
+  return { x: view.offX + (x-view.minX)*view.scale, y: view.offZ + (z-view.minZ)*view.scale };
+}
+
+function strokePathSegments(ctx, pts, closed, view, styleFn){
+  if(!pts || pts.length<2) return;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const n = pts.length;
+  const count = closed ? n : n-1;
+  let i = 0;
+  while(i < count){
+    const st = styleFn(pts[i], pts[(i+1)%n]);
+    if(!st){ i++; continue; }
+    ctx.beginPath();
+    const m0 = projMap(view, pts[i].x, pts[i].z);
+    ctx.moveTo(m0.x, m0.y);
+    ctx.strokeStyle = st.color;
+    ctx.lineWidth = st.width;
+    let j = i;
+    while(j < count){
+      const a = pts[j], b = pts[(j+1)%n];
+      const st2 = styleFn(a, b);
+      if(!st2 || st2.color!==st.color || st2.width!==st.width) break;
+      const m1 = projMap(view, b.x, b.z);
+      ctx.lineTo(m1.x, m1.y);
+      j++;
+    }
+    ctx.stroke();
+    i = Math.max(j, i+1);
+  }
+}
+
+function drawCircuitPreview(canvas, wayPoints){
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0c0e11';
+  ctx.fillRect(0,0,W,H);
+  if(!wayPoints || wayPoints.length<3 || !globalThis.TrackLib){
+    ctx.fillStyle = '#9aa0a6';
+    ctx.font = '13px monospace';
+    ctx.fillText('No preview', 16, 28);
+    return;
+  }
+  const path = TrackLib.buildCenterline(wayPoints);
+  if(!path.N) return;
+  const view = makeMapView(path.bboxMinX, path.bboxMaxX, path.bboxMinZ, path.bboxMaxZ, W, 22);
+  const roadW = Math.max(5, path.halfW * 2 * view.scale);
+  function kind(a,b){
+    const ya=a.y||0, yb=b.y||0;
+    if(Math.abs(ya-yb) > 0.4) return 'ramp';
+    if(ya > LEVEL_H*0.5 && yb > LEVEL_H*0.5) return 'upper';
+    return 'ground';
+  }
+  const palette = {
+    ground: { curb:'rgba(255,255,255,0.22)', road:'rgba(52,54,60,0.96)' },
+    upper:  { curb:'rgba(90,212,255,0.28)', road:'rgba(32,64,88,0.96)' },
+    ramp:   { curb:'rgba(90,180,255,0.40)', road:'rgba(40,90,170,0.95)' }
+  };
+  for(let pass=0; pass<2; pass++){
+    strokePathSegments(ctx, path.center, true, view, (a,b)=>{
+      const k = kind(a,b);
+      if(pass===0 && k!=='ground') return null;
+      if(pass===1 && k==='ground') return null;
+      return { color: palette[k].curb, width: roadW + Math.max(2, 0.55*2*view.scale) };
+    });
+    strokePathSegments(ctx, path.center, true, view, (a,b)=>{
+      const k = kind(a,b);
+      if(pass===0 && k!=='ground') return null;
+      if(pass===1 && k==='ground') return null;
+      return { color: palette[k].road, width: roadW };
+    });
+  }
+  const start = path.center[0];
+  if(start){
+    const s = projMap(view, start.x, start.z);
+    ctx.fillStyle = '#ffb020';
+    ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill();
+  }
+}
+
+function refreshTrackPreview(){
   const id = trackSelect.value;
-  TracksStore.setSelectedId(id);
-  const u = new URL(location.href);
-  u.searchParams.set('track', id);
-  location.href = u.pathname + u.search + u.hash;
+  const t = TracksStore.get(id) || activeTrack;
+  editorLink.href = 'track_editor.html?track=' + encodeURIComponent(t.id);
+  drawCircuitPreview(document.getElementById('trackPreview'), t.wayPoints);
+  const hasUpper = (t.wayPoints||[]).some(p => Array.isArray(p) && +p[2] >= 1);
+  const legend = document.getElementById('previewLegend');
+  legend.querySelector('i.u').parentElement.style.display = hasUpper ? '' : 'none';
+  legend.querySelector('i.r').parentElement.style.display = hasUpper ? '' : 'none';
+}
+
+trackSelect.addEventListener('change', ()=>{
+  TracksStore.setSelectedId(trackSelect.value);
+  refreshTrackPreview();
+  sessionNeedsReset = true;
+  updateMenuChrome();
 });
+refreshTrackPreview();
 
 /* ============================== track definition ============================== */
 /*
@@ -287,7 +531,6 @@ const HALF_W = 4.2;
 const CURB_W = 0.55;
 const WALL_GAP = 0.25;
 const WALL_H = 0.45;
-const LEVEL_H = 5.0;                      /* upper deck height (m) */
 const wallOffset = HALF_W+CURB_W+WALL_GAP;
 const SAMPLE_SPACING = 0.85;
 const FILLET_TARGET = 11;                 /* preferred turn radius (m) */
@@ -958,6 +1201,20 @@ const state = {
   boostUsed: false,
   boostActive: false
 };
+
+const session = {
+  mode: 'practice',
+  raceLaps: 3,
+  phase: 'practice', /* practice | outlap | racing | finished */
+  raceLapIndex: 0,
+  raceLapTimes: [],
+  outLapTime: null,
+  raceStartMs: 0
+};
+let sessionNeedsReset = true;
+let resultsVisible = false;
+let lastRaceResult = null;
+let finishToastTimer = 0;
 findInitialTrackIndex();
 function findInitialTrackIndex(){
   let best=Infinity, bestI=0;
@@ -996,17 +1253,27 @@ const prevPose = {x:state.x, z:state.z, y:state.y||0, yaw:state.yaw, steerAngle:
 const visPose = {x:state.x, z:state.z, y:state.y||0, yaw:state.yaw, steerAngle:0, pitch:0};
 
 function resetKart(){
-  const p = poseAtWaypoint(SPAWN_WP);
-  state.x = p.x; state.z = p.z; state.y = p.y||0; state.yaw = p.yaw;
+  const racing = session.mode==='race' && (session.phase==='outlap' || session.phase==='racing') && hasStarted;
+  if(racing){
+    const i = nearestTrackIndex(state.x, state.z, state.trackIdx, state.y);
+    const n = normals[i], t = tangents[i];
+    state.x = center[i].x + n.x*(-1.2);
+    state.z = center[i].z + n.z*(-1.2);
+    state.y = center[i].y||0;
+    state.yaw = Math.atan2(t.x, t.z);
+  } else {
+    const p = poseAtWaypoint(SPAWN_WP);
+    state.x = p.x; state.z = p.z; state.y = p.y||0; state.yaw = p.yaw;
+    state.timing = false;
+    state.lapStartTime = 0;
+    state.currentLapPath = [];
+    state.nextCp = START_WP;
+  }
   state.vx=0; state.vz=0; state.r=0; state.steerAngle=0; state.pitch=0;
   state.slip=0; state.slide=0; state.speed=0;
   state.wheelPos = 0;
   resetBoost();
   findInitialTrackIndex();
-  state.timing = false;
-  state.lapStartTime = 0;
-  state.currentLapPath = [];
-  state.nextCp = START_WP;
   kart.group.position.set(state.x, state.y||0, state.z);
   kart.group.rotation.order = 'YXZ';
   kart.group.rotation.y = state.yaw;
@@ -1205,16 +1472,54 @@ function beginLap(nowMs){
   resetBoost();
 }
 
+function ghostEnabled(){
+  return session.mode !== 'race';
+}
+
 function completeLap(nowMs){
   const t = nowMs - state.lapStartTime;
-  if(t > 2500){
-    state.lastLapTime = t;
-    if(state.bestLapTime===null || t<state.bestLapTime){
-      state.bestLapTime = t;
-      state.bestLapPath = state.currentLapPath.slice();
-    }
-    state.lapCount++;
+  if(t <= 2500){
+    beginLap(nowMs);
+    return;
   }
+
+  if(session.mode==='race'){
+    if(session.phase==='outlap'){
+      session.outLapTime = t;
+      state.lastLapTime = t;
+      session.phase = 'racing';
+      session.raceLapIndex = 1;
+      session.raceStartMs = nowMs;
+      state.lapCount = 1;
+      beginLap(nowMs);
+      showToast('Racing — lap 1 / ' + session.raceLaps);
+      return;
+    }
+    if(session.phase==='racing'){
+      session.raceLapTimes.push(t);
+      state.lastLapTime = t;
+      if(state.bestLapTime===null || t<state.bestLapTime){
+        state.bestLapTime = t;
+      }
+      if(session.raceLapTimes.length >= session.raceLaps){
+        finishRace(nowMs);
+        return;
+      }
+      session.raceLapIndex++;
+      state.lapCount = session.raceLapIndex;
+      beginLap(nowMs);
+      return;
+    }
+    beginLap(nowMs);
+    return;
+  }
+
+  state.lastLapTime = t;
+  if(state.bestLapTime===null || t<state.bestLapTime){
+    state.bestLapTime = t;
+    if(ghostEnabled()) state.bestLapPath = state.currentLapPath.slice();
+  }
+  state.lapCount++;
   beginLap(nowMs);
 }
 
@@ -1245,6 +1550,11 @@ let running = false;
 window.addEventListener('keydown', e=>{
   if(e.code==='Escape'){
     e.preventDefault();
+    if(resultsVisible){ closeResultsToMenu(); return; }
+    if(session.phase==='finished' && !running){
+      revealRaceResults();
+      return;
+    }
     if(running) openMenu();
     else if(hasStarted) closeMenu();
     return;
@@ -1312,14 +1622,18 @@ function updateModeUI(announce){
     elModeTag.innerHTML = '<b>wasd</b> · F mouse';
   }
   if(!announce) return;
-  elModeToast.textContent = driveMode==='mouse'
+  showToast(driveMode==='mouse'
     ? 'Mouse steering — right click throttle, left click brake'
-    : 'Keyboard — WASD and arrow keys';
-  elModeToast.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>{ elModeToast.classList.remove('show'); }, 1700);
+    : 'Keyboard — WASD and arrow keys');
 }
 updateModeUI(false);
+
+function showToast(msg, ms){
+  elModeToast.textContent = msg;
+  elModeToast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ elModeToast.classList.remove('show'); }, ms==null?1700:ms);
+}
 
 function toggleDriveMode(){
   driveMode = driveMode==='mouse' ? 'keys' : 'mouse';
@@ -1454,53 +1768,122 @@ function updateCamera(dt, vis){
 /* ============================== minimap ============================== */
 const miniCanvas = document.getElementById('minimap');
 const mctx = miniCanvas.getContext('2d');
+const elFloorTag = document.getElementById('floorTag');
 const MM = 200, MM_PAD = 14;
-const mmScale = (MM - MM_PAD*2) / Math.max(bboxMaxX-bboxMinX, bboxMaxZ-bboxMinZ);
-const mmSpanX = (bboxMaxX-bboxMinX)*mmScale, mmSpanZ=(bboxMaxZ-bboxMinZ)*mmScale;
-const mmOffX = (MM-mmSpanX)/2, mmOffZ=(MM-mmSpanZ)/2;
-function w2m(x,z){
-  return { x: mmOffX + (x-bboxMinX)*mmScale, y: mmOffZ + (z-bboxMinZ)*mmScale };
+const trackHasUpper = center.some(p => (p.y||0) > LEVEL_H * 0.5);
+const mmView = makeMapView(bboxMinX, bboxMaxX, bboxMinZ, bboxMaxZ, MM, MM_PAD);
+
+function segmentKind(a, b){
+  const ka = classifyHeight(a && a.y), kb = classifyHeight(b && b.y);
+  if(ka==='ramp' || kb==='ramp' || ka!==kb) return 'ramp';
+  return ka==='upper' ? 'upper' : 'ground';
 }
-const bgCanvas = document.createElement('canvas'); bgCanvas.width=MM; bgCanvas.height=MM;
-(function(){
-  const bctx = bgCanvas.getContext('2d');
-  bctx.clearRect(0,0,MM,MM);
-  bctx.beginPath();
-  for(let i=0;i<=N;i++){ const p=center[i%N]; const m=w2m(p.x,p.z); if(i===0) bctx.moveTo(m.x,m.y); else bctx.lineTo(m.x,m.y); }
-  bctx.closePath();
-  bctx.strokeStyle='rgba(255,255,255,0.35)';
-  bctx.lineWidth = Math.max(2, HALF_W*2*mmScale);
-  bctx.lineJoin='round'; bctx.stroke();
-  bctx.strokeStyle='rgba(10,10,10,0.9)';
-  bctx.lineWidth = Math.max(1, HALF_W*1.2*mmScale);
-  bctx.stroke();
-  const s0=w2m(center[wpSampleIdx[START_WP]].x, center[wpSampleIdx[START_WP]].z);
-  bctx.fillStyle='#ffb020'; bctx.beginPath(); bctx.arc(s0.x,s0.y,2.5,0,7); bctx.fill();
-})();
+
+function buildLayerBg(kind){
+  const cnv = document.createElement('canvas');
+  cnv.width = MM; cnv.height = MM;
+  const bctx = cnv.getContext('2d');
+  const palettes = {
+    ground: { curb:'rgba(255,255,255,0.38)', road:'rgba(10,10,10,0.92)' },
+    upper:  { curb:'rgba(90,212,255,0.48)', road:'rgba(16,40,58,0.92)' },
+    ramp:   { curb:'rgba(90,180,255,0.42)', road:'rgba(28,72,140,0.88)' }
+  };
+  const pal = palettes[kind];
+  const roadW = Math.max(2, HALF_W*2*mmView.scale);
+  strokePathSegments(bctx, center, true, mmView, (a,b)=>{
+    if(segmentKind(a,b)!==kind) return null;
+    return { color: pal.curb, width: roadW };
+  });
+  strokePathSegments(bctx, center, true, mmView, (a,b)=>{
+    if(segmentKind(a,b)!==kind) return null;
+    return { color: pal.road, width: Math.max(1, HALF_W*1.2*mmView.scale) };
+  });
+  return cnv;
+}
+
+const mmLayer = {
+  ground: buildLayerBg('ground'),
+  upper: trackHasUpper ? buildLayerBg('upper') : null,
+  ramp: trackHasUpper ? buildLayerBg('ramp') : null
+};
+let mmFloor = 0;
+if(trackHasUpper){
+  elFloorTag.classList.add('show');
+  elFloorTag.textContent = 'Ground';
+}
+
+function pathOnFloor(p, floor){
+  const k = classifyHeight(p.y);
+  if(k==='ramp') return true;
+  return floor===1 ? k==='upper' : k==='ground';
+}
+
+function strokeLapOnFloors(arr, activeFloor, activeColor, otherColor, activeW, otherW){
+  if(!arr || arr.length<2) return;
+  if(trackHasUpper){
+    strokePathSegments(mctx, arr, false, mmView, (a,b)=>{
+      const k = segmentKind(a,b);
+      const onOther = (activeFloor===1 && k==='ground') || (activeFloor===0 && k==='upper');
+      if(!onOther) return null;
+      return { color: otherColor, width: otherW };
+    });
+  }
+  strokePathSegments(mctx, arr, false, mmView, (a,b)=>{
+    const k = segmentKind(a,b);
+    const onActive = k==='ramp' || (activeFloor===1 ? k==='upper' : k==='ground');
+    if(!onActive) return null;
+    return { color: activeColor, width: activeW };
+  });
+}
 
 function drawMinimap(){
+  const y = visPose.y||0;
+  let floor = mmFloor;
+  if(trackHasUpper){
+    if(y >= LEVEL_H * 0.55) floor = 1;
+    else if(y <= LEVEL_H * 0.45) floor = 0;
+  } else {
+    floor = 0;
+  }
+  mmFloor = floor;
   mctx.clearRect(0,0,MM,MM);
-  mctx.drawImage(bgCanvas,0,0);
 
-  if(state.bestLapPath && state.bestLapPath.length>1){
-    mctx.beginPath();
-    for(let i=0;i<state.bestLapPath.length;i++){
-      const p=state.bestLapPath[i]; const m=w2m(p.x,p.z);
-      if(i===0) mctx.moveTo(m.x,m.y); else mctx.lineTo(m.x,m.y);
-    }
-    mctx.strokeStyle='rgba(61,220,132,0.85)'; mctx.lineWidth=1.6; mctx.stroke();
+  if(trackHasUpper){
+    const other = floor===1 ? mmLayer.ground : mmLayer.upper;
+    mctx.globalAlpha = 0.28;
+    if(other) mctx.drawImage(other, 0, 0);
+    mctx.globalAlpha = 1;
+  }
+  mctx.drawImage(floor===1 ? mmLayer.upper : mmLayer.ground, 0, 0);
+  if(trackHasUpper && mmLayer.ramp){
+    mctx.globalAlpha = 0.7;
+    mctx.drawImage(mmLayer.ramp, 0, 0);
+    mctx.globalAlpha = 1;
+  }
+
+  const startPt = center[wpSampleIdx[START_WP]];
+  const s0 = projMap(mmView, startPt.x, startPt.z);
+  const startOnActive = pathOnFloor(startPt, floor);
+  mctx.globalAlpha = startOnActive ? 1 : 0.35;
+  mctx.fillStyle='#ffb020'; mctx.beginPath(); mctx.arc(s0.x,s0.y,2.5,0,7); mctx.fill();
+  mctx.globalAlpha = 1;
+
+  if(elFloorTag.classList.contains('show')){
+    elFloorTag.textContent = floor===1 ? 'Upper' : 'Ground';
+    elFloorTag.classList.toggle('upper', floor===1);
+  }
+
+  if(ghostEnabled() && state.bestLapPath && state.bestLapPath.length>1){
+    strokeLapOnFloors(state.bestLapPath, floor,
+      'rgba(61,220,132,0.9)', 'rgba(61,220,132,0.28)', 1.7, 1.3);
   }
   if(state.currentLapPath.length>1){
-    mctx.beginPath();
-    const arr=state.currentLapPath;
-    const startI = Math.max(0, arr.length-1200);
-    for(let i=startI;i<arr.length;i++){
-      const p=arr[i]; const m=w2m(p.x,p.z);
-      if(i===startI) mctx.moveTo(m.x,m.y); else mctx.lineTo(m.x,m.y);
-    }
-    mctx.strokeStyle='rgba(255,176,32,0.9)'; mctx.lineWidth=1.6; mctx.stroke();
+    const arr = state.currentLapPath;
+    const startI = Math.max(0, arr.length-4000);
+    strokeLapOnFloors(arr.slice(startI), floor,
+      'rgba(255,176,32,0.95)', 'rgba(255,176,32,0.32)', 1.7, 1.3);
   }
-  const km = w2m(visPose.x, visPose.z);
+  const km = projMap(mmView, visPose.x, visPose.z);
   mctx.save();
   mctx.translate(km.x,km.y);
   mctx.rotate(Math.PI - visPose.yaw);
@@ -1847,10 +2230,13 @@ document.getElementById('muteBtn').addEventListener('click', ()=>{
 });
 
 /* ============================== HUD ============================== */
-const elLapCount=document.getElementById('lapCount');
+const elLapLine=document.getElementById('lapLine');
+const elSessionLabel=document.getElementById('sessionLabel');
 const elCurTime=document.getElementById('curTime');
 const elLastTime=document.getElementById('lastTime');
 const elBestTime=document.getElementById('bestTime');
+const elTotalRow=document.getElementById('totalRow');
+const elTotalTime=document.getElementById('totalTime');
 const elSpeedVal=document.getElementById('speedval');
 const elRpmFill=document.getElementById('rpmfill');
 const elSteerWheel=document.getElementById('steerWheel');
@@ -1860,15 +2246,41 @@ const elBoostFill=document.getElementById('boostfill');
 const STEER_WHEEL_DEG = P.steerWheelLock * 180 / Math.PI;
 
 function fmtTime(ms){
-  if(ms==null) return '--:--.---';
+  if(ms==null || !isFinite(ms) || ms<0) return '--:--.---';
   const m = Math.floor(ms/60000);
   const s = Math.floor((ms%60000)/1000);
   const mm = Math.floor(ms%1000);
   return m+':'+String(s).padStart(2,'0')+'.'+String(mm).padStart(3,'0');
 }
 
+function raceTotalMs(nowMs){
+  let sum = 0;
+  for(let i=0;i<session.raceLapTimes.length;i++) sum += session.raceLapTimes[i];
+  if(session.phase==='racing' && state.timing && nowMs){
+    sum += (nowMs - state.lapStartTime);
+  }
+  return sum;
+}
+
 function updateHUD(nowMs, input){
-  elLapCount.textContent = state.lapCount;
+  if(session.mode==='race'){
+    elSessionLabel.textContent = session.phase==='finished' ? 'Race finished' : ('Race · ' + session.raceLaps + ' laps');
+    elSessionLabel.classList.remove('practice');
+    if(session.phase==='outlap'){
+      elLapLine.innerHTML = 'out lap <span class="dim">does not count</span>';
+    } else if(session.phase==='finished'){
+      elLapLine.textContent = 'lap ' + session.raceLaps + ' / ' + session.raceLaps;
+    } else {
+      elLapLine.innerHTML = 'lap <span id="lapCount">' + session.raceLapIndex + '</span> / ' + session.raceLaps;
+    }
+    elTotalRow.style.display = (session.phase==='racing' || session.phase==='finished') ? '' : 'none';
+    elTotalTime.textContent = fmtTime(session.phase==='outlap' ? null : raceTotalMs(nowMs));
+  } else {
+    elSessionLabel.textContent = 'Free practice';
+    elSessionLabel.classList.add('practice');
+    elLapLine.innerHTML = 'lap <span id="lapCount">' + state.lapCount + '</span>';
+    elTotalRow.style.display = 'none';
+  }
   elCurTime.textContent = fmtTime(state.timing ? (nowMs-state.lapStartTime) : 0);
   elLastTime.textContent = fmtTime(state.lastLapTime);
   elBestTime.textContent = fmtTime(state.bestLapTime);
@@ -1897,8 +2309,76 @@ const FIXED_DT = 1/120;
 let acc = 0;
 let lastT = null;
 
+function canResume(){
+  return hasStarted && !sessionNeedsReset && session.phase !== 'finished';
+}
+
+function updateMenuChrome(){
+  const btn = document.getElementById('startBtn');
+  const foot = document.getElementById('startFoot');
+  if(canResume()){
+    btn.textContent = 'Resume';
+  } else if(gameMode==='race'){
+    btn.textContent = 'Start race';
+  } else {
+    btn.textContent = 'Start engine';
+  }
+  foot.textContent = gameMode==='race'
+    ? 'First lap is a formation lap and does not count. Ghost is disabled. Results are saved in this browser.'
+    : 'Runs entirely in-browser. Your best lap is kept as a ghost to race against.';
+  document.querySelectorAll('#modePick button').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-mode')===gameMode);
+  });
+  document.querySelectorAll('#lapPick button').forEach(b=>{
+    b.classList.toggle('on', +b.getAttribute('data-laps')===raceLapsChoice);
+  });
+  document.getElementById('lapPickWrap').classList.toggle('show', gameMode==='race');
+}
+
+function startSession(){
+  session.mode = gameMode;
+  session.raceLaps = raceLapsChoice;
+  session.phase = gameMode==='race' ? 'outlap' : 'practice';
+  session.raceLapIndex = 0;
+  session.raceLapTimes = [];
+  session.outLapTime = null;
+  session.raceStartMs = 0;
+  sessionNeedsReset = false;
+  state.lapCount = 1;
+  state.lastLapTime = null;
+  state.bestLapTime = null;
+  state.bestLapPath = null;
+  state.timing = false;
+  state.lapStartTime = 0;
+  state.currentLapPath = [];
+  state.nextCp = START_WP;
+  ghostKart.group.visible = false;
+  const p = poseAtWaypoint(SPAWN_WP);
+  state.x = p.x; state.z = p.z; state.y = p.y||0; state.yaw = p.yaw;
+  state.vx=0; state.vz=0; state.r=0; state.steerAngle=0; state.pitch=0;
+  state.slip=0; state.slide=0; state.speed=0;
+  state.wheelPos = 0;
+  resetBoost();
+  findInitialTrackIndex();
+  kart.group.position.set(state.x, state.y||0, state.z);
+  kart.group.rotation.order = 'YXZ';
+  kart.group.rotation.y = state.yaw;
+  kart.group.rotation.x = 0;
+  kart.steerFL.rotation.y = 0;
+  kart.steerFR.rotation.y = 0;
+  kart.helm.rotation.z = 0;
+  snapshotGates();
+  copyPose(state, prevPose);
+  copyPose(state, visPose);
+  camInit = false;
+}
+
 function openMenu(){
   if(!hasStarted) return;
+  if(session.phase==='finished' && !running){
+    revealRaceResults();
+    return;
+  }
   running = false;
   lastT = null;
   Object.keys(keys).forEach(k=>{ keys[k]=false; });
@@ -1907,19 +2387,203 @@ function openMenu(){
   mouseBtn.boost = false;
   if(document.pointerLockElement) document.exitPointerLock();
   document.body.classList.remove('playing');
-  const btn = document.getElementById('startBtn');
-  btn.textContent = 'Resume';
+  updateMenuChrome();
   document.getElementById('startScreen').style.display = 'flex';
 }
 
 function closeMenu(){
+  const selectedId = trackSelect.value;
+  if(selectedId !== activeTrack.id){
+    saveSettings();
+    try{ sessionStorage.setItem('gokart.autostart','1'); }catch(e){}
+    const u = new URL(location.href);
+    u.searchParams.set('track', selectedId);
+    location.href = u.pathname + u.search + u.hash;
+    return;
+  }
   document.getElementById('startScreen').style.display = 'none';
+  hideResults();
   initAudio();
+  if(!canResume()) startSession();
   running = true;
   hasStarted = true;
   lastT = null;
   canvas.focus();
   syncPointer();
+  updateHUD(performance.now(), getInput());
+  if(session.mode==='race' && session.phase==='outlap' && !state.timing){
+    showToast('Formation lap — first lap does not count', 2200);
+  }
+}
+
+function readResults(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(RESULTS_KEY) || '[]');
+    return Array.isArray(raw) ? raw : [];
+  }catch(e){ return []; }
+}
+function writeResults(list){
+  try{ localStorage.setItem(RESULTS_KEY, JSON.stringify(list.slice(0,50))); }catch(e){}
+}
+
+function buildRaceResult(){
+  const times = session.raceLapTimes.slice();
+  let best = null, worst = null, sum = 0;
+  for(let i=0;i<times.length;i++){
+    const t = times[i];
+    sum += t;
+    if(best===null || t<best) best = t;
+    if(worst===null || t>worst) worst = t;
+  }
+  const avg = times.length ? sum/times.length : null;
+  let variance = 0;
+  if(times.length>1){
+    for(let i=0;i<times.length;i++) variance += (times[i]-avg)*(times[i]-avg);
+    variance /= times.length;
+  }
+  return {
+    id: Date.now().toString(36) + Math.floor(Math.random()*1e6).toString(36),
+    at: Date.now(),
+    trackId: activeTrack.id,
+    trackName: activeTrack.name || activeTrack.id,
+    scheduledLaps: session.raceLaps,
+    completedLaps: times.length,
+    lapTimes: times,
+    outLapTime: session.outLapTime,
+    totalTime: sum,
+    bestLap: best,
+    worstLap: worst,
+    avgLap: avg,
+    consistency: times.length>1 ? Math.sqrt(variance) : null
+  };
+}
+
+function saveRaceResult(result){
+  const list = readResults();
+  list.unshift(result);
+  writeResults(list);
+}
+
+function finishRace(){
+  session.phase = 'finished';
+  running = false;
+  lastT = null;
+  sessionNeedsReset = true;
+  ghostKart.group.visible = false;
+  Object.keys(keys).forEach(k=>{ keys[k]=false; });
+  mouseBtn.gas = false;
+  mouseBtn.brake = false;
+  mouseBtn.boost = false;
+  if(document.pointerLockElement) document.exitPointerLock();
+  document.body.classList.remove('playing');
+  lastRaceResult = buildRaceResult();
+  saveRaceResult(lastRaceResult);
+  showToast('Race finished', 1600);
+  clearTimeout(finishToastTimer);
+  finishToastTimer = setTimeout(revealRaceResults, 1400);
+}
+
+function revealRaceResults(){
+  clearTimeout(finishToastTimer);
+  if(lastRaceResult) showResultsDetail(lastRaceResult, {justFinished:true});
+}
+
+function hideResults(){
+  resultsVisible = false;
+  document.getElementById('resultsScreen').style.display = 'none';
+}
+
+function closeResultsToMenu(){
+  hideResults();
+  updateMenuChrome();
+  document.getElementById('startScreen').style.display = 'flex';
+}
+
+function escHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function fmtDate(ts){
+  const d = new Date(ts);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[d.getMonth()] + ' ' + d.getDate() + ' · ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function showResultsList(){
+  running = false;
+  lastT = null;
+  if(document.pointerLockElement) document.exitPointerLock();
+  document.body.classList.remove('playing');
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('resultsListView').style.display = '';
+  document.getElementById('resultsDetailView').style.display = 'none';
+  const listEl = document.getElementById('historyList');
+  const list = readResults();
+  if(!list.length){
+    listEl.innerHTML = '<div class="histEmpty">No races saved yet. Finish a race to store results here.</div>';
+  } else {
+    listEl.innerHTML = '';
+    list.forEach(r=>{
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'histItem';
+      btn.innerHTML = '<div><b>' + escHtml(r.trackName||r.trackId) + '</b><div class="meta">' + fmtDate(r.at) + ' · ' + r.scheduledLaps + ' laps</div></div><div>' + fmtTime(r.totalTime) + '</div>';
+      btn.addEventListener('click', ()=> showResultsDetail(r, {fromList:true}));
+      listEl.appendChild(btn);
+    });
+  }
+  resultsVisible = true;
+  document.getElementById('resultsScreen').style.display = 'flex';
+}
+
+function showResultsDetail(result, opts){
+  opts = opts||{};
+  running = false;
+  lastT = null;
+  if(document.pointerLockElement) document.exitPointerLock();
+  document.body.classList.remove('playing');
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('resultsListView').style.display = 'none';
+  document.getElementById('resultsDetailView').style.display = '';
+  document.getElementById('resultsTitle').textContent = opts.justFinished ? 'Race finished' : 'Race result';
+  document.getElementById('resultsSub').textContent =
+    (result.trackName||result.trackId) + ' · ' + result.scheduledLaps + ' laps · ' + fmtDate(result.at);
+
+  const stats = [
+    ['Total', fmtTime(result.totalTime), false],
+    ['Best lap', fmtTime(result.bestLap), true],
+    ['Worst lap', fmtTime(result.worstLap), false],
+    ['Average', fmtTime(result.avgLap), false],
+    ['Out lap', fmtTime(result.outLapTime), false],
+    ['Consistency', result.consistency==null ? '—' : '±' + (result.consistency/1000).toFixed(3) + 's', false]
+  ];
+  const statsEl = document.getElementById('resultsStats');
+  statsEl.innerHTML = stats.map(s=>
+    '<div class="box"><div class="k">'+s[0]+'</div><div class="v'+(s[2]?' best':'')+'">'+s[1]+'</div></div>'
+  ).join('');
+
+  const body = document.getElementById('lapTableBody');
+  body.innerHTML = '';
+  const times = result.lapTimes||[];
+  const best = result.bestLap;
+  times.forEach((t,i)=>{
+    const tr = document.createElement('tr');
+    if(best!=null && t===best) tr.className = 'best';
+    let gapTxt = '—';
+    if(best!=null){
+      const d = t-best;
+      gapTxt = d===0 ? 'best' : '+' + (d/1000).toFixed(3) + 's';
+    }
+    tr.innerHTML = '<td>'+(i+1)+'</td><td>'+fmtTime(t)+'</td><td>'+gapTxt+'</td>';
+    body.appendChild(tr);
+  });
+  if(!times.length){
+    body.innerHTML = '<tr><td colspan="3">No timed race laps</td></tr>';
+  }
+  resultsVisible = true;
+  document.getElementById('resultsScreen').style.display = 'flex';
 }
 
 function tickBoost(dt, want){
@@ -1986,7 +2650,7 @@ function frame(now){
   kart.steerFR.rotation.y = visPose.steerAngle;
   kart.helm.rotation.z = -input.steer * P.steerWheelLock;
 
-  if(state.timing && state.bestLapPath && state.bestLapPath.length>2){
+  if(ghostEnabled() && state.timing && state.bestLapPath && state.bestLapPath.length>2){
     const total = state.bestLapPath.length;
     const lapElapsedMs = now - state.lapStartTime;
     const bestLapDurationMs = state.bestLapTime||1;
@@ -2020,6 +2684,39 @@ requestAnimationFrame(frame);
 
 /* ============================== start screen ============================== */
 document.getElementById('startBtn').addEventListener('click', closeMenu);
+document.getElementById('resultsBtn').addEventListener('click', showResultsList);
+document.getElementById('historyBackBtn').addEventListener('click', closeResultsToMenu);
+document.getElementById('resultsMenuBtn').addEventListener('click', closeResultsToMenu);
+document.getElementById('resultsListBtn').addEventListener('click', showResultsList);
+
+document.querySelectorAll('#modePick button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const mode = btn.getAttribute('data-mode');
+    if(mode!=='practice' && mode!=='race') return;
+    gameMode = mode;
+    if(hasStarted && (session.phase==='finished' || mode !== session.mode)) sessionNeedsReset = true;
+    saveSettings();
+    updateMenuChrome();
+  });
+});
+document.querySelectorAll('#lapPick button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const n = +btn.getAttribute('data-laps');
+    if(n!==3 && n!==5 && n!==10) return;
+    raceLapsChoice = n;
+    if(hasStarted && (session.phase==='finished' || (session.mode==='race' && n !== session.raceLaps))) sessionNeedsReset = true;
+    saveSettings();
+    updateMenuChrome();
+  });
+});
+updateMenuChrome();
+
+try{
+  if(sessionStorage.getItem('gokart.autostart')==='1'){
+    sessionStorage.removeItem('gokart.autostart');
+    closeMenu();
+  }
+}catch(e){}
 
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden){ lastT=null; }
