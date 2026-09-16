@@ -246,7 +246,7 @@
         <div class="trackPick">
           <label for="trackSelect">Circuit</label>
           <select id="trackSelect"></select>
-          <a class="editorLink" id="editorLink" href="track_editor.html">edit tracks</a>
+          <a class="editorLink" id="editorLink" href="track_editor.html" hidden>edit tracks</a>
         </div>
         <label class="fieldLabel">Mode</label>
         <div class="seg" id="modePick">
@@ -320,8 +320,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="track_lib.js"></script>
-<script src="tracks_store.js"></script>
+<script src="track_lib.js?v=20260915"></script>
+<script src="tracks_store.js?v=20260915"></script>
 <script>
 (async function(){
 "use strict";
@@ -372,6 +372,7 @@ scene.add(fill);
 await TracksStore.ready();
 const trackSelect = document.getElementById('trackSelect');
 const editorLink = document.getElementById('editorLink');
+const authoringLocal = typeof TracksStore.isPublicPlay !== 'function' || !TracksStore.isPublicPlay();
 TracksStore.list().forEach(t=>{
   const opt = document.createElement('option');
   opt.value = t.id;
@@ -381,7 +382,10 @@ TracksStore.list().forEach(t=>{
 const activeTrack = TracksStore.getActive();
 TracksStore.setSelectedId(activeTrack.id);
 trackSelect.value = activeTrack.id;
-editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
+if(authoringLocal){
+  editorLink.hidden = false;
+  editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
+}
 if(activeTrack.name) document.title = activeTrack.name + ' — Indoor Line';
 
 const SETTINGS_KEY = 'gokart.sessionSettings.v1';
@@ -502,7 +506,7 @@ function drawCircuitPreview(canvas, wayPoints){
 function refreshTrackPreview(){
   const id = trackSelect.value;
   const t = TracksStore.get(id) || activeTrack;
-  editorLink.href = 'track_editor.html?track=' + encodeURIComponent(t.id);
+  if(authoringLocal) editorLink.href = 'track_editor.html?track=' + encodeURIComponent(t.id);
   drawCircuitPreview(document.getElementById('trackPreview'), t.wayPoints);
   const hasUpper = (t.wayPoints||[]).some(p => Array.isArray(p) && +p[2] >= 1);
   const legend = document.getElementById('previewLegend');
@@ -527,7 +531,7 @@ refreshTrackPreview();
 const wayPoints = (activeTrack.wayPoints && activeTrack.wayPoints.length >= 3)
   ? activeTrack.wayPoints
   : TracksStore.FALLBACK.wayPoints;
-const HALF_W = 4.2;
+const HALF_W = 4.0;
 const CURB_W = 0.55;
 const WALL_GAP = 0.25;
 const WALL_H = 0.45;

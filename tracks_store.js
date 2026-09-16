@@ -1,6 +1,8 @@
 /**
- * Shared track catalog — localStorage is the live source of truth.
- * On first load (or when new files appear), seeds from tracks/manifest.json.
+ * Track catalog.
+ * Live (public host): shipped files in tracks/ only — visitors cannot author circuits.
+ * Local/dev: localStorage is the working copy so the editor can iterate before you
+ * export JSON into tracks/ and deploy.
  */
 (function (global) {
   "use strict";
@@ -55,6 +57,12 @@
 
   function sanitizeId(id) {
     return String(id || "track").trim().replace(/[^a-zA-Z0-9_-]/g, "-").replace(/^-+|-+$/g, "") || "track";
+  }
+
+  /** True on a deployed host. Localhost / file:// stay in authoring mode. */
+  function isPublicPlay() {
+    const h = String((typeof location !== "undefined" && location.hostname) || "");
+    return h !== "" && h !== "localhost" && h !== "127.0.0.1" && h !== "[::1]";
   }
 
   function readLocal() {
@@ -115,9 +123,13 @@
     return out;
   }
 
-  /** Merge file tracks into local catalog (local edits win for same id). */
+  /** Live: files only. Local: merge file tracks into localStorage (local edits win). */
   async function sync() {
     const builtins = await fetchBuiltinTracks();
+    if (isPublicPlay()) {
+      cache = { tracks: builtins.map(cloneTrack) };
+      return cache;
+    }
     let local = readLocal();
     if (!local || !local.tracks.length) {
       local = { tracks: builtins.map(cloneTrack) };
@@ -217,6 +229,7 @@
 
   global.TracksStore = {
     FALLBACK,
+    isPublicPlay,
     ready,
     sync,
     list,

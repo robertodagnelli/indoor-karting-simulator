@@ -5,6 +5,16 @@
     "file": "indoor.json"
   },
   {
+    "id": "barimax",
+    "name": "BARIMAX",
+    "file": "barimax.json"
+  },
+  {
+    "id": "barimax2",
+    "name": "BARIMAX2",
+    "file": "barimax2.json"
+  },
+  {
     "id": "custom-circuit",
     "name": "Custom Circuit",
     "file": "custom-circuit.json"
