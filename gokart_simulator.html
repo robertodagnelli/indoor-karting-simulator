@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  Indoor Karting Simulator
+  Copyright (C) 2026 Roberto Dagnelli
+  SPDX-License-Identifier: AGPL-3.0-or-later
+  Source: https://github.com/robertodagnelli/indoor-karting-simulator
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -233,6 +239,12 @@
   .ghostBtn,#resultsBtn{background:#141414;color:#fff;border:1px solid rgba(255,255,255,0.16);}
   .ghostBtn:hover,#resultsBtn:hover{border-color:var(--brand);color:#fff;}
   #startInner .foot,#resultsInner .foot{margin-top:12px;font-size:12px;color:#8a8a8a;line-height:1.4;}
+  .homeLicense{
+    margin:18px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);
+    font-size:11px;color:#8a8a8a;line-height:1.55;max-width:62ch;
+  }
+  .homeLicense a{color:#cfcfcf;text-decoration:underline;text-underline-offset:2px;}
+  .homeLicense a:hover{color:#fff;}
   .trackPick{display:flex;align-items:center;gap:10px;margin:0 0 14px 0;flex-wrap:wrap;}
   .trackPick label,.fieldLabel{
     font-size:11px;color:var(--dim);display:block;margin:0 0 6px 0;
@@ -437,6 +449,12 @@
       </div>
       <div class="foot" id="startFoot">Runs in the browser. Your best lap becomes a ghost you can race on the next run.</div>
     </div>
+    <p class="homeLicense">
+      © 2026 Roberto Dagnelli. Indoor Karting Simulator is free software under the
+      <a href="LICENSE">GNU Affero GPL v3</a>; you may redistribute and modify it under that license.
+      There is no warranty.
+      <a href="https://github.com/robertodagnelli/indoor-karting-simulator">Source code</a>.
+    </p>
   </div>
 </div>
 
@@ -532,7 +550,7 @@ TracksStore.list().forEach(t=>{
 const activeTrack = TracksStore.getActive();
 TracksStore.setSelectedId(activeTrack.id);
 trackSelect.value = activeTrack.id;
-if(authoringLocal){
+if(authoringLocal && editorLink){
   editorLink.hidden = false;
   editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
 }
@@ -656,7 +674,7 @@ function drawCircuitPreview(canvas, wayPoints){
 function refreshTrackPreview(){
   const id = trackSelect.value;
   const t = TracksStore.get(id) || activeTrack;
-  if(authoringLocal) editorLink.href = 'track_editor.html?track=' + encodeURIComponent(t.id);
+  if(authoringLocal && editorLink) editorLink.href = 'track_editor.html?track=' + encodeURIComponent(t.id);
   drawCircuitPreview(document.getElementById('trackPreview'), t.wayPoints);
   const hasUpper = (t.wayPoints||[]).some(p => Array.isArray(p) && +p[2] >= 1);
   const legend = document.getElementById('previewLegend');

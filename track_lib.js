@@ -1,3 +1,4 @@
+/** SPDX-License-Identifier: AGPL-3.0-or-later */
 /**
  * Shared track centerline builder — closed polyline with circular corner fillets.
  * Used by the simulator and the 2D track editor.

@@ -1,3 +1,4 @@
+/** SPDX-License-Identifier: AGPL-3.0-or-later */
 /**
  * Track catalog.
  * Live (public host): shipped files in tracks/ only — visitors cannot author circuits.
@@ -79,6 +80,7 @@
 
   function writeLocal(data) {
     cache = data;
+    if (isPublicPlay()) return;
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
     } catch (e) {
@@ -155,7 +157,7 @@
   }
 
   function list() {
-    const tracks = (cache && cache.tracks) || (readLocal() && readLocal().tracks) || [];
+    const tracks = (cache && cache.tracks) || (!isPublicPlay() && readLocal() && readLocal().tracks) || [];
     return tracks.map(cloneTrack).sort((a, b) => {
       if (a.id === "indoor") return -1;
       if (b.id === "indoor") return 1;
@@ -191,6 +193,7 @@
   }
 
   function upsert(track) {
+    if (isPublicPlay()) throw new Error("Track authoring is local only");
     const id = sanitizeId(track.id);
     const wps = normalizeWayPoints(track.wayPoints || track);
     if (wps.length < 3) throw new Error("Need at least 3 wayPoints");
@@ -209,6 +212,7 @@
   }
 
   function remove(id) {
+    if (isPublicPlay()) throw new Error("Track authoring is local only");
     id = sanitizeId(id);
     const data = cache || readLocal() || { tracks: [] };
     data.tracks = data.tracks.filter(t => t.id !== id);
