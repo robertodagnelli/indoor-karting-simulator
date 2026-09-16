@@ -3,12 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Indoor Line — Kart Circuit Trainer</title>
+<title>Indoor Karting Simulator</title>
+<meta name="description" content="Practice real indoor karting in the browser. Realistic physics, ghost laps, and warehouse circuits for training braking points, apexes, and throttle control.">
+<link rel="icon" href="iks-logo.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0d0e10; --panel:rgba(18,20,23,0.74); --border:rgba(255,255,255,0.10);
-    --amber:#ffb020; --green:#3ddc84; --red:#ff4d4d; --text:#e7e6e2; --dim:#9aa0a6;
+    --amber:#ffb020; --green:#3ddc84; --red:#e10600; --text:#f4f4f2; --dim:#a8a8a8;
     --mono: 'JetBrains Mono','Consolas','SF Mono',monospace;
+    --display: 'Barlow Condensed', 'Arial Narrow', Impact, sans-serif;
+    --ui: 'Barlow', 'Segoe UI', system-ui, sans-serif;
+    --brand:#e10600;
+    --brand-hot:#ff2d2d;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:var(--mono);touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;}
@@ -105,49 +114,162 @@
   }
 
   #startScreen,#resultsScreen{
-    position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%, #1a1d21 0%, #0a0b0c 70%);
-    color:var(--text);z-index:100;display:flex;align-items:center;justify-content:center;
-    overflow:auto;padding:24px 12px;
+    position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:stretch;
+    overflow:auto;padding:0;color:var(--text);font-family:var(--ui);touch-action:pan-y;overscroll-behavior:contain;
+    background:#050505;
   }
-  #resultsScreen{z-index:110;display:none;}
-  #startInner,#resultsInner{max-width:760px;width:min(760px,96vw);padding:28px 32px;text-align:left;}
-  #startInner h1,#resultsInner h1{font-size:26px;margin:0 0 6px 0;font-weight:600;letter-spacing:-0.01em;}
-  #startInner p.sub,#resultsInner p.sub{color:var(--dim);margin:0 0 22px 0;font-size:13px;line-height:1.5;}
-  .startGrid{display:grid;grid-template-columns:1fr 220px;gap:8px 28px;align-items:start;margin-bottom:18px;}
-  @media (max-width:680px){ .startGrid{grid-template-columns:1fr;} }
-  .ctrlgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12.5px;color:var(--dim);margin-bottom:24px;}
-  .ctrlgrid b{color:var(--text);font-weight:600;}
+  #startScreen{
+    background:#050505 url('iks-hero.png') center 38% / cover no-repeat;
+  }
+  #startScreen::before{
+    content:'';position:absolute;inset:0;pointer-events:none;z-index:0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.28) 0%, rgba(5,5,5,0.62) 42%, rgba(5,5,5,0.92) 78%, #050505 100%),
+      radial-gradient(ellipse at 18% 8%, rgba(225,6,0,0.28), transparent 46%);
+  }
+  #resultsScreen{
+    z-index:110;display:none;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(225,6,0,0.22), transparent 42%),
+      #080808;
+  }
+  .homeStripe{
+    position:relative;z-index:2;flex:0 0 auto;height:10px;width:100%;
+    background:repeating-linear-gradient(90deg,#fff 0 11px,#111 11px 22px);
+    box-shadow:0 6px 0 var(--brand);
+  }
+  .homeShell,#resultsInner{
+    position:relative;z-index:1;width:min(980px,100%);margin:0 auto;
+    padding:22px 22px 36px;text-align:left;
+  }
+  .homeBrand{display:flex;align-items:center;gap:18px;margin:6px 0 16px;}
+  .homeLogo{
+    width:96px;height:96px;object-fit:cover;flex:0 0 auto;
+    border-radius:14px;border:1px solid rgba(255,255,255,0.2);
+    box-shadow:0 10px 36px rgba(225,6,0,0.32), 0 0 0 3px rgba(0,0,0,0.45);
+    background:#000;
+  }
+  .homeKicker{
+    margin:0 0 4px;font-family:var(--display);font-size:13px;font-weight:700;
+    letter-spacing:.22em;text-transform:uppercase;color:var(--brand);
+  }
+  .homeBrand h1{
+    margin:0;font-family:var(--display);font-weight:800;line-height:.88;
+    font-size:clamp(34px, 6.4vw, 58px);letter-spacing:.02em;text-transform:uppercase;
+    color:#fff;text-shadow:0 2px 18px rgba(0,0,0,0.55);
+  }
+  .homeBrand h1 span{
+    display:block;margin-top:4px;color:var(--brand);font-size:.46em;letter-spacing:.16em;font-weight:700;
+  }
+  .homeBrand p.sub{
+    margin:10px 0 0;max-width:54ch;color:#d8d8d6;font-size:15px;line-height:1.45;font-weight:500;
+    text-shadow:0 1px 8px rgba(0,0,0,0.65);
+  }
+  .homeChips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;padding:0;list-style:none;}
+  .homeChips li{
+    font-size:12px;font-weight:600;letter-spacing:.04em;color:#fff;
+    background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.16);
+    border-left:3px solid var(--brand);border-radius:3px;padding:6px 10px;
+  }
+  #startInner{
+    background:rgba(8,8,8,0.78);border:1px solid rgba(255,255,255,0.12);
+    border-top:3px solid var(--brand);border-radius:12px;
+    padding:20px 20px 18px;backdrop-filter:blur(12px);
+    box-shadow:0 24px 70px rgba(0,0,0,0.5);
+  }
+  #resultsInner{
+    background:rgba(10,10,10,0.88);border:1px solid rgba(255,255,255,0.1);
+    border-top:3px solid var(--brand);border-radius:12px;margin-top:22px;
+    box-shadow:0 24px 70px rgba(0,0,0,0.5);
+  }
+  #resultsInner h1{
+    font-family:var(--display);font-size:34px;margin:0 0 6px;font-weight:800;
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  #resultsInner p.sub{color:var(--dim);margin:0 0 18px;font-size:14px;line-height:1.5;}
+  .startGrid{display:grid;grid-template-columns:1fr 250px;gap:16px 24px;align-items:start;margin-bottom:14px;}
+  @media (max-width:720px){
+    .homeBrand{align-items:flex-start;}
+    .homeLogo{width:72px;height:72px;}
+    #startInner{display:flex;flex-direction:column;}
+    .startGrid{display:contents;}
+    .startForm{order:1;margin-bottom:14px;}
+    .startActions{order:2;flex-direction:column;align-items:stretch;margin-bottom:4px;}
+    #startFoot{order:3;margin-bottom:14px;}
+    .startPreview{order:4;margin-bottom:14px;}
+    .ctrlFold{order:5;}
+    #startBtn,.ghostBtn,#resultsBtn{width:100%;text-align:center;}
+  }
+  .ctrlFold{
+    border:1px solid rgba(255,255,255,0.1);border-radius:8px;margin:0 0 16px;
+    background:rgba(255,255,255,0.03);
+  }
+  .ctrlFold summary{
+    cursor:pointer;padding:11px 14px;font-family:var(--display);letter-spacing:.1em;
+    text-transform:uppercase;font-size:15px;font-weight:700;list-style:none;color:#fff;
+  }
+  .ctrlFold summary::-webkit-details-marker{display:none;}
+  .ctrlFold summary::after{content:'▾';float:right;color:var(--brand);font-size:12px;}
+  .ctrlFold[open] summary::after{content:'▴';}
+  .ctrlgrid{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;color:var(--dim);margin:0;padding:0 14px 14px;}
+  .ctrlgrid b{color:#fff;font-weight:700;font-family:var(--mono);font-size:12px;}
   .startActions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
   #startBtn,.ghostBtn,#resultsBtn{
-    border:none;border-radius:3px;padding:13px 22px;font-family:var(--mono);font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.02em;
+    border:none;border-radius:4px;padding:14px 24px;cursor:pointer;
+    font-family:var(--display);font-size:18px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
   }
-  #startBtn{background:var(--amber);color:#1a1200;}
+  #startBtn{
+    background:var(--brand);color:#fff;
+    box-shadow:0 0 0 0 rgba(225,6,0,0.45);
+    animation:pitGlow 2.4s ease-in-out infinite;
+  }
+  #startBtn:hover{background:var(--brand-hot);}
+  @keyframes pitGlow{
+    0%,100%{box-shadow:0 0 0 0 rgba(225,6,0,0.4);}
+    50%{box-shadow:0 0 26px 3px rgba(225,6,0,0.38);}
+  }
+  @media (prefers-reduced-motion:reduce){ #startBtn{animation:none;} }
   #startBtn:active,.ghostBtn:active,#resultsBtn:active{transform:translateY(1px);}
-  .ghostBtn,#resultsBtn{background:#121417;color:var(--text);border:1px solid var(--border);}
-  #startInner .foot,#resultsInner .foot{margin-top:14px;font-size:11px;color:#666;}
+  .ghostBtn,#resultsBtn{background:#141414;color:#fff;border:1px solid rgba(255,255,255,0.16);}
+  .ghostBtn:hover,#resultsBtn:hover{border-color:var(--brand);color:#fff;}
+  #startInner .foot,#resultsInner .foot{margin-top:12px;font-size:12px;color:#8a8a8a;line-height:1.4;}
   .trackPick{display:flex;align-items:center;gap:10px;margin:0 0 14px 0;flex-wrap:wrap;}
-  .trackPick label,.fieldLabel{font-size:12px;color:var(--dim);display:block;margin:0 0 6px 0;}
+  .trackPick label,.fieldLabel{
+    font-size:11px;color:var(--dim);display:block;margin:0 0 6px 0;
+    font-family:var(--display);letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+  }
   .trackPick select{
-    flex:1;min-width:160px;background:#121417;border:1px solid var(--border);color:var(--text);
-    border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;
+    flex:1;min-width:160px;background:#111;border:1px solid rgba(255,255,255,0.14);color:#fff;
+    border-radius:4px;padding:10px 12px;font-family:var(--ui);font-size:14px;
   }
-  .trackPick a.editorLink{font-size:11px;color:var(--amber);text-decoration:none;}
+  .trackPick select:focus{outline:none;border-color:var(--brand);}
+  .trackPick a.editorLink{font-size:12px;color:var(--brand);text-decoration:none;font-weight:600;}
   .trackPick a.editorLink:hover{text-decoration:underline;}
-  .seg{display:flex;gap:6px;margin:0 0 14px 0;}
+  .seg{display:flex;gap:8px;margin:0 0 14px 0;}
   .seg button{
-    flex:1;background:#121417;border:1px solid var(--border);color:var(--dim);
-    border-radius:3px;padding:8px 10px;font-family:var(--mono);font-size:12px;cursor:pointer;
+    flex:1;background:#111;border:1px solid rgba(255,255,255,0.12);color:var(--dim);
+    border-radius:4px;padding:9px 10px;font-family:var(--display);font-size:14px;
+    font-weight:700;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;
   }
-  .seg button.on{background:rgba(255,176,32,0.18);border-color:var(--amber);color:var(--text);}
+  .seg button:hover{border-color:rgba(255,255,255,0.28);color:#fff;}
+  .seg button.on{background:rgba(225,6,0,0.18);border-color:var(--brand);color:#fff;}
+  .modeSeg button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:11px 12px;text-align:left;}
+  .modeSeg button strong{font-size:15px;font-weight:800;letter-spacing:.06em;}
+  .modeSeg button em{font-style:normal;font-family:var(--ui);font-size:12px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--dim);}
+  .modeSeg button.on em{color:rgba(255,255,255,0.78);}
   #lapPickWrap{display:none;}
   #lapPickWrap.show{display:block;}
-  #previewWrap{background:#0c0e11;border:1px solid var(--border);border-radius:3px;padding:8px;}
-  #trackPreview{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:2px;background:#0c0e11;}
-  #previewLegend{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:8px;font-size:10px;color:var(--dim);}
+  #previewWrap{background:#0a0a0a;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:8px;}
+  .previewLabel{
+    font-family:var(--display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--dim);margin:0 0 6px 2px;font-weight:700;
+  }
+  #trackPreview{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:4px;background:#0a0a0a;}
+  #previewLegend{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:8px;font-size:11px;color:var(--dim);}
   #previewLegend i{display:inline-block;width:8px;height:8px;border-radius:1px;margin-right:5px;vertical-align:middle;}
   #previewLegend .g{background:#c8c6c0;} #previewLegend .u{background:#5ad4ff;} #previewLegend .r{background:#3a7adf;}
   .statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px 16px;margin:0 0 18px 0;}
-  .statgrid .box{background:#121417;border:1px solid var(--border);border-radius:3px;padding:10px 12px;}
+  .statgrid .box{background:#111;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px 12px;}
   .statgrid .k{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
   .statgrid .v{font-size:16px;color:var(--text);}
   .statgrid .v.best{color:var(--green);}
@@ -158,10 +280,10 @@
   #historyList{display:flex;flex-direction:column;gap:8px;margin:0 0 18px 0;max-height:48vh;overflow:auto;}
   .histItem{
     display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;
-    background:#121417;border:1px solid var(--border);border-radius:3px;padding:10px 12px;cursor:pointer;text-align:left;width:100%;
-    font-family:var(--mono);color:var(--text);font-size:12px;
+    background:#111;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px 12px;cursor:pointer;text-align:left;width:100%;
+    font-family:var(--ui);color:var(--text);font-size:13px;
   }
-  .histItem:hover{border-color:var(--amber);}
+  .histItem:hover{border-color:var(--brand);}
   .histItem .meta{color:var(--dim);font-size:11px;margin-top:3px;}
   .histEmpty{color:var(--dim);font-size:13px;padding:18px 0;}
 
@@ -238,60 +360,88 @@
 </div>
 
 <div id="startScreen">
-  <div id="startInner">
-    <h1>Indoor Line</h1>
-    <p class="sub">A low-poly indoor kart circuit for practicing braking points, apexes and throttle control. Arcade-friendly handling with speed-sensitive steering — focused on learning lines, not managing balance.</p>
-    <div class="startGrid">
+  <div class="homeStripe" aria-hidden="true"></div>
+  <div class="homeShell">
+    <header class="homeBrand">
+      <img class="homeLogo" src="iks-logo.png" width="96" height="96" alt="Indoor Karting Simulator">
       <div>
-        <div class="trackPick">
-          <label for="trackSelect">Circuit</label>
-          <select id="trackSelect"></select>
-          <a class="editorLink" id="editorLink" href="track_editor.html" hidden>edit tracks</a>
+        <p class="homeKicker">Train for the real track</p>
+        <h1>Indoor Karting <span>Simulator</span></h1>
+        <p class="sub">A realistic indoor kart trainer for braking points, apexes and throttle. Bicycle-model physics and speed-sensitive steering — built to practice real-life indoor racing lines in the browser.</p>
+      </div>
+    </header>
+    <ul class="homeChips">
+      <li>Realistic grip &amp; slip</li>
+      <li>Ghost vs your best lap</li>
+      <li>Warehouse circuits</li>
+      <li>Practice or race</li>
+    </ul>
+    <div id="startInner">
+      <div class="startGrid">
+        <div class="startForm">
+          <label class="fieldLabel" for="trackSelect">Circuit</label>
+          <div class="trackPick">
+            <select id="trackSelect"></select>
+            <a class="editorLink" id="editorLink" href="track_editor.html" hidden>edit tracks</a>
+          </div>
+          <label class="fieldLabel">Session</label>
+          <div class="seg modeSeg" id="modePick">
+            <button type="button" data-mode="practice" class="on">
+              <strong>Free practice</strong>
+              <em>Learn lines with a ghost</em>
+            </button>
+            <button type="button" data-mode="race">
+              <strong>Race</strong>
+              <em>Timed laps, saved results</em>
+            </button>
+          </div>
+          <div id="lapPickWrap">
+            <label class="fieldLabel">Race length</label>
+            <div class="seg" id="lapPick">
+              <button type="button" data-laps="3" class="on">3 laps</button>
+              <button type="button" data-laps="5">5 laps</button>
+              <button type="button" data-laps="10">10 laps</button>
+            </div>
+          </div>
         </div>
-        <label class="fieldLabel">Mode</label>
-        <div class="seg" id="modePick">
-          <button type="button" data-mode="practice" class="on">Free practice</button>
-          <button type="button" data-mode="race">Race</button>
-        </div>
-        <div id="lapPickWrap">
-          <label class="fieldLabel">Race length</label>
-          <div class="seg" id="lapPick">
-            <button type="button" data-laps="3" class="on">3 laps</button>
-            <button type="button" data-laps="5">5 laps</button>
-            <button type="button" data-laps="10">10 laps</button>
+        <div class="startPreview">
+          <div class="previewLabel">Circuit map</div>
+          <div id="previewWrap">
+            <canvas id="trackPreview" width="400" height="400"></canvas>
+            <div id="previewLegend">
+              <span><i class="g"></i>Ground</span>
+              <span><i class="u"></i>Upper</span>
+              <span><i class="r"></i>Ramp</span>
+            </div>
           </div>
         </div>
       </div>
-      <div id="previewWrap">
-        <canvas id="trackPreview" width="400" height="400"></canvas>
-        <div id="previewLegend">
-          <span><i class="g"></i>Ground</span>
-          <span><i class="u"></i>Upper</span>
-          <span><i class="r"></i>Ramp</span>
+      <details class="ctrlFold">
+        <summary>How to drive</summary>
+        <div class="ctrlgrid">
+          <b>W / ↑</b><span>throttle</span>
+          <b>S / ↓</b><span>brake &amp; reverse</span>
+          <b>F</b><span>switch mouse / WASD + arrows</span>
+          <b>Mouse</b><span>steer · right click throttle · left click brake</span>
+          <b>WASD / arrows</b><span>drive in keyboard mode</span>
+          <b>Shift</b><span>overboost +20% (hold, once per lap — Space / MMB also work)</span>
+          <b>Q / E</b><span>look left / right (hold both to look behind)</span>
+          <b>C</b><span>cycle camera (chase / cockpit)</span>
+          <b>R</b><span>reset onto track</span>
+          <b>Esc</b><span>pause / return to menu</span>
         </div>
+      </details>
+      <div class="startActions">
+        <button id="startBtn">Start engine</button>
+        <button type="button" id="resultsBtn" class="ghostBtn">Race results</button>
       </div>
+      <div class="foot" id="startFoot">Runs in the browser. Your best lap becomes a ghost you can race on the next run.</div>
     </div>
-    <div class="ctrlgrid">
-      <b>W / ↑</b><span>throttle</span>
-      <b>S / ↓</b><span>brake &amp; reverse</span>
-      <b>F</b><span>switch mouse / WASD + arrows</span>
-      <b>Mouse</b><span>steer · right click throttle · left click brake</span>
-      <b>WASD / arrows</b><span>drive in keyboard mode</span>
-      <b>Shift</b><span>overboost +20% (hold, once per lap — Space / MMB also work)</span>
-      <b>Q / E</b><span>look left / right (hold both to look behind)</span>
-      <b>C</b><span>cycle camera (chase / cockpit)</span>
-      <b>R</b><span>reset onto track</span>
-      <b>Esc</b><span>pause / return to menu</span>
-    </div>
-    <div class="startActions">
-      <button id="startBtn">Start engine</button>
-      <button type="button" id="resultsBtn" class="ghostBtn">Race results</button>
-    </div>
-    <div class="foot" id="startFoot">Runs entirely in-browser. Your best lap is kept as a ghost to race against.</div>
   </div>
 </div>
 
 <div id="resultsScreen">
+  <div class="homeStripe" aria-hidden="true"></div>
   <div id="resultsInner">
     <div id="resultsListView">
       <h1>Race results</h1>
@@ -386,7 +536,7 @@ if(authoringLocal){
   editorLink.hidden = false;
   editorLink.href = 'track_editor.html?track=' + encodeURIComponent(activeTrack.id);
 }
-if(activeTrack.name) document.title = activeTrack.name + ' — Indoor Line';
+document.title = (activeTrack.name ? activeTrack.name + ' — ' : '') + 'Indoor Karting Simulator';
 
 const SETTINGS_KEY = 'gokart.sessionSettings.v1';
 const RESULTS_KEY = 'gokart.raceResults.v1';
@@ -1905,19 +2055,23 @@ function drawMinimap(){
  *  - crawl: soft low hum (quieter at speed)
  *  - accel: rising high whirr
  *  - speed: road/wind noise
- *  - slip: sharp high-pitched scrub + grit scrape + abrupt bark/chirp
+ *  - slip: recorded tire squeal (one-shot, fade-out if the slide ends early)
  */
 let audioCtx=null, muted=false;
 let motorMaster=null, humOsc=null, humGain=null, whirrOsc=null, whirrOsc2=null, whirrGain=null, whirrFilter=null;
 let roadGain=null, roadFilter=null;
-let screechGain=null, screechFilter=null, screechFilter2=null;
-let screechTone=null, screechToneGain=null, screechTone2=null, screechTone2Gain=null;
-let gritGain=null, gritFilter=null;
-let barkGain=null, barkFilter=null;
-let screechLfo=null, screechLfoGain=null;
-let prevSlideAudio = 0;
 let lastImpactAt = 0;
 let impactNoiseBuf=null;
+const DRIFT_SAMPLE_URL = 'wheel-drift-sound-effect.mp3';
+const DRIFT_VOL = 0.55;
+const DRIFT_PITCH = 1.35;
+const DRIFT_FADE = 0.12;
+const DRIFT_HOLD = 0.45;
+const BRAKE_HOLD = 0.2;
+let driftBuf=null, driftGain=null, driftSrc=null;
+let driftHeld=false;
+let driftTurnLock=0;
+let driftClock=0, slideHold=0, brakeHold=0, brakeLock=false;
 
 function makeNoiseBuffer(ctx, seconds, pink){
   const n = Math.floor(ctx.sampleRate*seconds);
@@ -1944,6 +2098,10 @@ function makeNoiseBuffer(ctx, seconds, pink){
 }
 
 function initAudio(){
+  if(audioCtx){
+    if(audioCtx.state==='suspended') audioCtx.resume();
+    return;
+  }
   try{
     audioCtx = new (window.AudioContext||window.webkitAudioContext)();
 
@@ -2001,94 +2159,114 @@ function initAudio(){
     roadSrc.connect(roadFilter); roadFilter.connect(roadAir); roadAir.connect(roadGain); roadGain.connect(audioCtx.destination);
     roadSrc.start();
 
-    /* === Kart tire scrub: high piercing squeal (only when past grip) === */
-    const skidPink = makeNoiseBuffer(audioCtx, 1.5, true);
-    const skidWhite = makeNoiseBuffer(audioCtx, 1.0, false);
-    impactNoiseBuf = skidWhite;
-    const skidSrc = audioCtx.createBufferSource();
-    skidSrc.buffer = skidPink; skidSrc.loop = true;
-    const gritSrc = audioCtx.createBufferSource();
-    gritSrc.buffer = skidWhite; gritSrc.loop = true;
+    impactNoiseBuf = makeNoiseBuffer(audioCtx, 1.0, false);
 
-    /* Narrow high-frequency scrub bands (not windy midrange) */
-    screechFilter = audioCtx.createBiquadFilter();
-    screechFilter.type = 'bandpass';
-    screechFilter.frequency.value = 4500;
-    screechFilter.Q.value = 14;
-
-    screechFilter2 = audioCtx.createBiquadFilter();
-    screechFilter2.type = 'bandpass';
-    screechFilter2.frequency.value = 7200;
-    screechFilter2.Q.value = 16;
-
-    screechGain = audioCtx.createGain();
-    screechGain.gain.value = 0;
-
-    const skidSplit1 = audioCtx.createGain(); skidSplit1.gain.value = 0.7;
-    const skidSplit2 = audioCtx.createGain(); skidSplit2.gain.value = 0.55;
-    skidSrc.connect(skidSplit1); skidSplit1.connect(screechFilter); screechFilter.connect(screechGain);
-    skidSrc.connect(skidSplit2); skidSplit2.connect(screechFilter2); screechFilter2.connect(screechGain);
-    screechGain.connect(audioCtx.destination);
-
-    /* Fine high grit (abrasive rubber), kept thin */
-    gritFilter = audioCtx.createBiquadFilter();
-    gritFilter.type = 'bandpass';
-    gritFilter.frequency.value = 3800;
-    gritFilter.Q.value = 3.5;
-    const gritHP = audioCtx.createBiquadFilter();
-    gritHP.type = 'highpass';
-    gritHP.frequency.value = 2500;
-    gritGain = audioCtx.createGain();
-    gritGain.gain.value = 0;
-    gritSrc.connect(gritHP); gritHP.connect(gritFilter); gritFilter.connect(gritGain); gritGain.connect(audioCtx.destination);
-
-    /* Piercing tonal squeal */
-    screechTone = audioCtx.createOscillator();
-    screechTone.type = 'sawtooth';
-    screechTone.frequency.value = 3800;
-    const toneFilter = audioCtx.createBiquadFilter();
-    toneFilter.type = 'bandpass';
-    toneFilter.frequency.value = 4000;
-    toneFilter.Q.value = 18;
-    screechToneGain = audioCtx.createGain();
-    screechToneGain.gain.value = 0;
-    screechTone.connect(toneFilter); toneFilter.connect(screechToneGain); screechToneGain.connect(audioCtx.destination);
-    screechTone.start();
-
-    screechTone2 = audioCtx.createOscillator();
-    screechTone2.type = 'triangle';
-    screechTone2.frequency.value = 5600;
-    const toneFilter2 = audioCtx.createBiquadFilter();
-    toneFilter2.type = 'bandpass';
-    toneFilter2.frequency.value = 5800;
-    toneFilter2.Q.value = 20;
-    screechTone2Gain = audioCtx.createGain();
-    screechTone2Gain.gain.value = 0;
-    screechTone2.connect(toneFilter2); toneFilter2.connect(screechTone2Gain); screechTone2Gain.connect(audioCtx.destination);
-    screechTone2.start();
-
-    /* Short chirp when traction snaps */
-    barkFilter = audioCtx.createBiquadFilter();
-    barkFilter.type = 'bandpass';
-    barkFilter.frequency.value = 5000;
-    barkFilter.Q.value = 12;
-    barkGain = audioCtx.createGain();
-    barkGain.gain.value = 0;
-    skidSrc.connect(barkFilter); barkFilter.connect(barkGain); barkGain.connect(audioCtx.destination);
-
-    screechLfo = audioCtx.createOscillator();
-    screechLfo.type = 'sine';
-    screechLfo.frequency.value = 22;
-    screechLfoGain = audioCtx.createGain();
-    screechLfoGain.gain.value = 180;
-    screechLfo.connect(screechLfoGain);
-    screechLfoGain.connect(screechFilter.frequency);
-    screechLfo.start();
-
-    skidSrc.start();
-    gritSrc.start();
-    prevSlideAudio = 0;
+    driftGain = audioCtx.createGain();
+    driftGain.gain.value = 0;
+    driftGain.connect(audioCtx.destination);
+    loadDriftSample();
   }catch(e){ /* audio unavailable */ }
+}
+
+function loadDriftSample(){
+  if(!audioCtx || driftBuf) return;
+  fetch(DRIFT_SAMPLE_URL)
+    .then(r => { if(!r.ok) throw new Error('drift sample missing'); return r.arrayBuffer(); })
+    .then(ab => audioCtx.decodeAudioData(ab))
+    .then(buf => { driftBuf = buf; })
+    .catch(()=>{});
+}
+
+function stopDriftNode(node, when){
+  if(!node) return;
+  try{ node.stop(when); }catch(e){}
+}
+
+function startDriftScreech(){
+  if(!audioCtx || !driftBuf || muted) return;
+  const now = audioCtx.currentTime;
+  stopDriftNode(driftSrc, now);
+  const src = audioCtx.createBufferSource();
+  src.buffer = driftBuf;
+  src.playbackRate.value = DRIFT_PITCH;
+  src.connect(driftGain);
+  src.onended = ()=>{ if(driftSrc === src) driftSrc = null; };
+  driftGain.gain.cancelScheduledValues(now);
+  driftGain.gain.setValueAtTime(DRIFT_VOL, now);
+  src.start(now);
+  driftSrc = src;
+}
+
+function stopDriftScreech(silent){
+  driftHeld = false;
+  if(silent){
+    driftTurnLock = 0;
+    brakeLock = false;
+    slideHold = 0;
+    brakeHold = 0;
+  }
+  if(!audioCtx || !driftSrc){
+    if(driftGain && audioCtx){
+      const t = audioCtx.currentTime;
+      driftGain.gain.cancelScheduledValues(t);
+      driftGain.gain.setValueAtTime(0, t);
+    }
+    driftSrc = null;
+    return;
+  }
+  const now = audioCtx.currentTime;
+  if(silent){
+    stopDriftNode(driftSrc, now);
+    driftSrc = null;
+    driftGain.gain.cancelScheduledValues(now);
+    driftGain.gain.setValueAtTime(0, now);
+    return;
+  }
+  const g = Math.max(driftGain.gain.value, 0.0001);
+  driftGain.gain.cancelScheduledValues(now);
+  driftGain.gain.setValueAtTime(g, now);
+  driftGain.gain.linearRampToValueAtTime(0.0001, now + DRIFT_FADE);
+  stopDriftNode(driftSrc, now + DRIFT_FADE);
+}
+
+function updateDriftScreech(skidAmt, speedGate, steer, brake, speedKmh){
+  if(!driftBuf || !driftGain) return;
+  const now = audioCtx.currentTime;
+  const dt = driftClock ? Math.min(0.05, Math.max(0, now - driftClock)) : 0.016;
+  driftClock = now;
+
+  const intensity = skidAmt * speedGate;
+  const sliding = intensity > 0.28;
+  const braking = brake > 0.5 && speedKmh > 30;
+  const steerDir = steer > 0.18 ? 1 : steer < -0.18 ? -1 : 0;
+
+  if(sliding) slideHold += dt;
+  else slideHold = 0;
+  if(braking) brakeHold += dt;
+  else {
+    brakeHold = 0;
+    brakeLock = false;
+  }
+
+  if(steerDir === 0 && !sliding){
+    driftTurnLock = 0;
+  } else if(driftTurnLock && steerDir && driftTurnLock !== steerDir){
+    if(driftHeld || driftSrc) stopDriftScreech(false);
+    driftTurnLock = 0;
+    slideHold = 0;
+  }
+
+  const wantSlide = slideHold >= DRIFT_HOLD && driftTurnLock === 0;
+  const wantBrake = brakeHold >= BRAKE_HOLD && !brakeLock;
+
+  if(!driftHeld && (wantSlide || wantBrake)){
+    if(wantSlide) driftTurnLock = steerDir || 2;
+    if(wantBrake) brakeLock = true;
+    driftHeld = true;
+    startDriftScreech();
+  } else if(driftHeld && !sliding && !braking){
+    stopDriftScreech(false);
+  }
 }
 
 function playWallImpact(impactSpeed){
@@ -2175,44 +2353,10 @@ function updateAudio(input){
   roadFilter.frequency.setTargetAtTime(220 + speedKmh*8, t, 0.08);
   roadGain.gain.setTargetAtTime(roadAmt * (0.018 + speedKmh*0.00055), t, 0.1);
 
-  /* Screech only on hard slide past grip — not ordinary high-speed cornering */
-  const skidAmt = clamp((slide - 0.12) * 2.0, 0, 1);
-  const speedGate = clamp((speedKmh-20)/28, 0, 1);
-
-  const skidVol = skidAmt * speedGate * 0.42;
-  screechGain.gain.setTargetAtTime(skidVol, t, 0.03);
-  screechFilter.frequency.setTargetAtTime(4200 + skidAmt*2400 + speed*40, t, 0.04);
-  screechFilter2.frequency.setTargetAtTime(6800 + skidAmt*2200 + speed*50, t, 0.04);
-  screechFilter.Q.setTargetAtTime(12 + skidAmt*6, t, 0.06);
-  screechFilter2.Q.setTargetAtTime(14 + skidAmt*6, t, 0.06);
-
-  const gritVol = skidAmt * speedGate * 0.12;
-  gritGain.gain.setTargetAtTime(gritVol, t, 0.03);
-  gritFilter.frequency.setTargetAtTime(3200 + skidAmt*1800, t, 0.05);
-
-  const toneVol = skidAmt * speedGate * 0.09;
-  screechToneGain.gain.setTargetAtTime(toneVol, t, 0.025);
-  screechTone.frequency.setTargetAtTime(3600 + skidAmt*1800 + speed*30, t, 0.03);
-  screechTone2Gain.gain.setTargetAtTime(toneVol * 0.5, t, 0.025);
-  screechTone2.frequency.setTargetAtTime(5200 + skidAmt*2000 + speed*40, t, 0.03);
-
-  if(screechLfo){
-    screechLfo.frequency.setTargetAtTime(18 + skidAmt*16, t, 0.08);
-    screechLfoGain.gain.setTargetAtTime(140 + skidAmt*200, t, 0.08);
-  }
-
-  const slideDelta = slide - prevSlideAudio;
-  prevSlideAudio = slide;
-  const chirpTrig = skidAmt > 0.25 && speedGate > 0.35 && slideDelta > 0.06;
-  if(chirpTrig && barkGain){
-    const bark = clamp(slideDelta*12 + skidAmt*0.25, 0.12, 0.55) * speedGate;
-    barkFilter.frequency.setValueAtTime(4500 + skidAmt*2000, t);
-    barkGain.gain.cancelScheduledValues(t);
-    barkGain.gain.setValueAtTime(Math.max(barkGain.gain.value, bark), t);
-    barkGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-  } else if(barkGain && barkGain.gain.value < 0.02){
-    barkGain.gain.setTargetAtTime(0, t, 0.04);
-  }
+  /* Tire squeal: long slides past grip, or committed braking */
+  const skidAmt = clamp((slide - 0.18) * 1.7, 0, 1);
+  const speedGate = clamp((speedKmh-28)/26, 0, 1);
+  updateDriftScreech(skidAmt, speedGate, input.steer||0, input.brake||0, speedKmh);
 }
 
 document.getElementById('muteBtn').addEventListener('click', ()=>{
@@ -2225,11 +2369,7 @@ document.getElementById('muteBtn').addEventListener('click', ()=>{
     if(humGain) humGain.gain.setTargetAtTime(0, t, 0.02);
     if(whirrGain) whirrGain.gain.setTargetAtTime(0, t, 0.02);
     if(roadGain) roadGain.gain.setTargetAtTime(0, t, 0.02);
-    if(screechGain) screechGain.gain.setTargetAtTime(0, t, 0.02);
-    if(screechToneGain) screechToneGain.gain.setTargetAtTime(0, t, 0.02);
-    if(screechTone2Gain) screechTone2Gain.gain.setTargetAtTime(0, t, 0.02);
-    if(gritGain) gritGain.gain.setTargetAtTime(0, t, 0.02);
-    if(barkGain) barkGain.gain.setTargetAtTime(0, t, 0.02);
+    stopDriftScreech(true);
   }
 });
 
@@ -2328,8 +2468,8 @@ function updateMenuChrome(){
     btn.textContent = 'Start engine';
   }
   foot.textContent = gameMode==='race'
-    ? 'First lap is a formation lap and does not count. Ghost is disabled. Results are saved in this browser.'
-    : 'Runs entirely in-browser. Your best lap is kept as a ghost to race against.';
+    ? 'Formation lap first — it does not count. Ghost is off. Race results stay in this browser.'
+    : 'Runs in the browser. Your best lap becomes a ghost you can race on the next run.';
   document.querySelectorAll('#modePick button').forEach(b=>{
     b.classList.toggle('on', b.getAttribute('data-mode')===gameMode);
   });
